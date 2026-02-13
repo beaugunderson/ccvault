@@ -1,8 +1,8 @@
 # ABOUTME: Git ignore file for ccvault Go project
 # ABOUTME: Excludes build artifacts, editor files, and local data
 
-# Binaries
-ccvault
+# Binaries (root level only)
+/ccvault
 *.exe
 *.exe~
 *.dll
