@@ -1,0 +1,375 @@
+// ABOUTME: Integration tests for database operations
+// ABOUTME: Tests CRUD operations and FTS5 search functionality
+
+package db
+
+import (
+	"database/sql"
+	"os"
+	"testing"
+	"time"
+
+	"github.com/2389-research/ccvault/pkg/models"
+)
+
+func setupTestDB(t *testing.T) (*DB, func()) {
+	t.Helper()
+
+	tmpDir, err := os.MkdirTemp("", "ccvault-test-*")
+	if err != nil {
+		t.Fatalf("create temp dir: %v", err)
+	}
+
+	db, err := Open(tmpDir)
+	if err != nil {
+		os.RemoveAll(tmpDir)
+		t.Fatalf("open db: %v", err)
+	}
+
+	cleanup := func() {
+		db.Close()
+		os.RemoveAll(tmpDir)
+	}
+
+	return db, cleanup
+}
+
+func TestOpenAndClose(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Verify database file exists
+	if _, err := os.Stat(db.Path()); os.IsNotExist(err) {
+		t.Error("database file not created")
+	}
+
+	// Verify tables exist
+	var count int
+	err := db.QueryRow("SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='projects'").Scan(&count)
+	if err != nil {
+		t.Fatalf("query tables: %v", err)
+	}
+	if count != 1 {
+		t.Error("projects table not created")
+	}
+}
+
+func TestProjectCRUD(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Create project
+	p := &models.Project{
+		Path:           "/Users/test/project",
+		DisplayName:    "test/project",
+		FirstSeenAt:    time.Now(),
+		LastActivityAt: time.Now(),
+		SessionCount:   1,
+		TotalTokens:    1000,
+	}
+
+	err := db.UpsertProject(p)
+	if err != nil {
+		t.Fatalf("upsert project: %v", err)
+	}
+
+	if p.ID == 0 {
+		t.Error("project ID not set after upsert")
+	}
+
+	// Get project
+	got, err := db.GetProject(p.ID)
+	if err != nil {
+		t.Fatalf("get project: %v", err)
+	}
+
+	if got.Path != p.Path {
+		t.Errorf("path = %s, want %s", got.Path, p.Path)
+	}
+
+	// Get by path
+	got, err = db.GetProjectByPath(p.Path)
+	if err != nil {
+		t.Fatalf("get project by path: %v", err)
+	}
+
+	if got.ID != p.ID {
+		t.Errorf("id = %d, want %d", got.ID, p.ID)
+	}
+
+	// List projects
+	projects, err := db.GetProjects("activity", 10)
+	if err != nil {
+		t.Fatalf("get projects: %v", err)
+	}
+
+	if len(projects) != 1 {
+		t.Errorf("len(projects) = %d, want 1", len(projects))
+	}
+}
+
+func TestProjectUpsertAccumulates(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// First insert
+	p := &models.Project{
+		Path:           "/Users/test/project",
+		DisplayName:    "test/project",
+		FirstSeenAt:    time.Now(),
+		LastActivityAt: time.Now(),
+		SessionCount:   1,
+		TotalTokens:    1000,
+	}
+	db.UpsertProject(p)
+
+	// Second insert (simulating another session)
+	p2 := &models.Project{
+		Path:           "/Users/test/project",
+		DisplayName:    "test/project",
+		FirstSeenAt:    time.Now(),
+		LastActivityAt: time.Now().Add(time.Hour),
+		SessionCount:   1,
+		TotalTokens:    500,
+	}
+	db.UpsertProject(p2)
+
+	// Verify accumulation
+	got, _ := db.GetProjectByPath(p.Path)
+	if got.SessionCount != 2 {
+		t.Errorf("session_count = %d, want 2", got.SessionCount)
+	}
+	if got.TotalTokens != 1500 {
+		t.Errorf("total_tokens = %d, want 1500", got.TotalTokens)
+	}
+}
+
+func TestSessionCRUD(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Create project first
+	p := &models.Project{
+		Path:           "/Users/test/project",
+		DisplayName:    "test/project",
+		FirstSeenAt:    time.Now(),
+		LastActivityAt: time.Now(),
+	}
+	db.UpsertProject(p)
+
+	// Create session
+	s := &models.Session{
+		ID:           "test-session-123",
+		ProjectID:    p.ID,
+		StartedAt:    time.Now(),
+		EndedAt:      time.Now().Add(time.Hour),
+		Model:        "claude-opus-4-5-20251101",
+		GitBranch:    "main",
+		TurnCount:    10,
+		InputTokens:  500,
+		OutputTokens: 300,
+		SourceFile:   "/test/session.jsonl",
+	}
+
+	err := db.UpsertSession(s)
+	if err != nil {
+		t.Fatalf("upsert session: %v", err)
+	}
+
+	// Get session
+	got, err := db.GetSession(s.ID)
+	if err != nil {
+		t.Fatalf("get session: %v", err)
+	}
+
+	if got.Model != s.Model {
+		t.Errorf("model = %s, want %s", got.Model, s.Model)
+	}
+
+	// List sessions
+	sessions, err := db.GetSessions(p.ID, 10)
+	if err != nil {
+		t.Fatalf("get sessions: %v", err)
+	}
+
+	if len(sessions) != 1 {
+		t.Errorf("len(sessions) = %d, want 1", len(sessions))
+	}
+}
+
+func TestTurnCRUD(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Setup project and session
+	p := &models.Project{Path: "/test", DisplayName: "test"}
+	db.UpsertProject(p)
+
+	s := &models.Session{
+		ID:         "session-1",
+		ProjectID:  p.ID,
+		StartedAt:  time.Now(),
+		SourceFile: "/test.jsonl",
+	}
+	db.UpsertSession(s)
+
+	// Insert turns
+	turns := []models.Turn{
+		{
+			ID:        "turn-1",
+			SessionID: s.ID,
+			Type:      "user",
+			Timestamp: time.Now(),
+			Content:   "Hello, can you help me with Go programming?",
+		},
+		{
+			ID:        "turn-2",
+			SessionID: s.ID,
+			ParentID:  "turn-1",
+			Type:      "assistant",
+			Timestamp: time.Now().Add(time.Second),
+			Content:   "Of course! I'd be happy to help with Go programming.",
+		},
+	}
+
+	err := db.InsertTurns(turns)
+	if err != nil {
+		t.Fatalf("insert turns: %v", err)
+	}
+
+	// Get turns
+	got, err := db.GetTurns(s.ID)
+	if err != nil {
+		t.Fatalf("get turns: %v", err)
+	}
+
+	if len(got) != 2 {
+		t.Errorf("len(turns) = %d, want 2", len(got))
+	}
+
+	if got[0].Content != turns[0].Content {
+		t.Errorf("content = %s, want %s", got[0].Content, turns[0].Content)
+	}
+}
+
+func TestFullTextSearch(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Setup
+	p := &models.Project{Path: "/test", DisplayName: "test"}
+	db.UpsertProject(p)
+
+	s := &models.Session{ID: "session-1", ProjectID: p.ID, StartedAt: time.Now(), SourceFile: "/test.jsonl"}
+	db.UpsertSession(s)
+
+	turns := []models.Turn{
+		{ID: "turn-1", SessionID: s.ID, Type: "user", Timestamp: time.Now(), Content: "How do I implement a REST API in Go?"},
+		{ID: "turn-2", SessionID: s.ID, Type: "assistant", Timestamp: time.Now(), Content: "You can use the net/http package or a framework like Gin."},
+		{ID: "turn-3", SessionID: s.ID, Type: "user", Timestamp: time.Now(), Content: "What about database connections?"},
+	}
+	db.InsertTurns(turns)
+
+	// Search
+	results, err := db.SearchTurns("REST API", 10)
+	if err != nil {
+		t.Fatalf("search turns: %v", err)
+	}
+
+	if len(results) == 0 {
+		t.Error("expected search results, got none")
+	}
+
+	// Search for Go
+	results, err = db.SearchTurns("Go", 10)
+	if err != nil {
+		t.Fatalf("search turns: %v", err)
+	}
+
+	if len(results) < 1 {
+		t.Error("expected results for 'Go' search")
+	}
+}
+
+func TestToolUses(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	// Setup
+	p := &models.Project{Path: "/test", DisplayName: "test"}
+	db.UpsertProject(p)
+
+	s := &models.Session{ID: "session-1", ProjectID: p.ID, StartedAt: time.Now(), SourceFile: "/test.jsonl"}
+	db.UpsertSession(s)
+
+	toolUses := []models.ToolUse{
+		{TurnID: "turn-1", SessionID: s.ID, ToolName: "Bash", FilePath: "", Timestamp: time.Now()},
+		{TurnID: "turn-2", SessionID: s.ID, ToolName: "Read", FilePath: "/main.go", Timestamp: time.Now()},
+		{TurnID: "turn-3", SessionID: s.ID, ToolName: "Bash", Timestamp: time.Now()},
+	}
+
+	err := db.InsertToolUses(toolUses)
+	if err != nil {
+		t.Fatalf("insert tool uses: %v", err)
+	}
+
+	// Get stats
+	stats, err := db.GetToolUsageStats(10)
+	if err != nil {
+		t.Fatalf("get tool stats: %v", err)
+	}
+
+	if stats["Bash"] != 2 {
+		t.Errorf("Bash count = %d, want 2", stats["Bash"])
+	}
+
+	if stats["Read"] != 1 {
+		t.Errorf("Read count = %d, want 1", stats["Read"])
+	}
+}
+
+func TestTransaction(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	p := &models.Project{Path: "/test", DisplayName: "test"}
+
+	err := db.WithTx(func(tx *sql.Tx) error {
+		return db.UpsertProjectTx(tx, p)
+	})
+
+	if err != nil {
+		t.Fatalf("transaction: %v", err)
+	}
+
+	got, _ := db.GetProject(p.ID)
+	if got == nil {
+		t.Error("project not created in transaction")
+	}
+}
+
+func TestGetFirstAndLastActivity(t *testing.T) {
+	db, cleanup := setupTestDB(t)
+	defer cleanup()
+
+	now := time.Now()
+	earlier := now.Add(-24 * time.Hour)
+
+	p1 := &models.Project{Path: "/test1", DisplayName: "test1", FirstSeenAt: earlier, LastActivityAt: earlier}
+	p2 := &models.Project{Path: "/test2", DisplayName: "test2", FirstSeenAt: now, LastActivityAt: now}
+	db.UpsertProject(p1)
+	db.UpsertProject(p2)
+
+	first, last, err := db.GetFirstAndLastActivity()
+	if err != nil {
+		t.Fatalf("get activity range: %v", err)
+	}
+
+	if first.After(earlier.Add(time.Second)) {
+		t.Errorf("first activity should be around %v, got %v", earlier, first)
+	}
+
+	if last.Before(now.Add(-time.Second)) {
+		t.Errorf("last activity should be around %v, got %v", now, last)
+	}
+}
