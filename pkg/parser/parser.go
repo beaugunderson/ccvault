@@ -1,0 +1,278 @@
+// ABOUTME: JSONL parser for Claude Code conversation files
+// ABOUTME: Converts raw JSONL entries into structured Turn objects
+
+package parser
+
+import (
+	"bufio"
+	"encoding/json"
+	"fmt"
+	"io"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/2389-research/ccvault/pkg/models"
+)
+
+// ParseSession reads a session JSONL file and returns all turns
+func ParseSession(path string) ([]models.Turn, *models.Session, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, nil, fmt.Errorf("open session file: %w", err)
+	}
+	defer f.Close()
+
+	return ParseSessionReader(f, path)
+}
+
+// ParseSessionReader parses a session from an io.Reader
+func ParseSessionReader(r io.Reader, sourcePath string) ([]models.Turn, *models.Session, error) {
+	var turns []models.Turn
+	session := &models.Session{
+		SourceFile: sourcePath,
+	}
+
+	scanner := bufio.NewScanner(r)
+	// Increase buffer size for large JSONL entries
+	buf := make([]byte, 0, 1024*1024) // 1MB initial
+	scanner.Buffer(buf, 10*1024*1024) // 10MB max
+
+	lineNum := 0
+	for scanner.Scan() {
+		lineNum++
+		line := scanner.Bytes()
+		if len(line) == 0 {
+			continue
+		}
+
+		turn, err := ParseTurn(line)
+		if err != nil {
+			// Log but continue - some entries may be malformed
+			continue
+		}
+
+		if turn != nil {
+			turns = append(turns, *turn)
+			updateSessionMetadata(session, turn, line)
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return nil, nil, fmt.Errorf("scan session file: %w", err)
+	}
+
+	// Set session ID from first turn if available
+	if len(turns) > 0 {
+		session.ID = turns[0].SessionID
+	}
+
+	// Set end time from last turn
+	if len(turns) > 0 {
+		session.EndedAt = turns[len(turns)-1].Timestamp
+	}
+
+	session.TurnCount = len(turns)
+
+	return turns, session, nil
+}
+
+// ParseTurn parses a single JSONL line into a Turn
+func ParseTurn(data []byte) (*models.Turn, error) {
+	var raw models.RawTurn
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return nil, fmt.Errorf("unmarshal turn: %w", err)
+	}
+
+	// Skip entries without UUID (like file-history-snapshot)
+	if raw.UUID == "" {
+		return nil, nil
+	}
+
+	// Parse timestamp
+	ts, err := parseTimestamp(raw.Timestamp)
+	if err != nil {
+		ts = time.Now() // Fallback
+	}
+
+	turn := &models.Turn{
+		ID:        raw.UUID,
+		SessionID: raw.SessionID,
+		ParentID:  raw.ParentUUID,
+		Type:      raw.Type,
+		Timestamp: ts,
+		RawJSON:   data,
+	}
+
+	// Extract content based on type
+	turn.Content = extractContent(raw)
+
+	// Extract token usage for assistant messages
+	if raw.Type == "assistant" && raw.Message != nil {
+		var msg models.RawAssistantMessage
+		if err := json.Unmarshal(raw.Message, &msg); err == nil {
+			if msg.Usage != nil {
+				turn.InputTokens = msg.Usage.InputTokens
+				turn.OutputTokens = msg.Usage.OutputTokens
+			}
+		}
+	}
+
+	return turn, nil
+}
+
+// extractContent extracts searchable text content from a turn
+func extractContent(raw models.RawTurn) string {
+	switch raw.Type {
+	case "user":
+		if raw.Message != nil {
+			var msg models.RawUserMessage
+			if err := json.Unmarshal(raw.Message, &msg); err == nil {
+				return msg.Content
+			}
+		}
+	case "assistant":
+		if raw.Message != nil {
+			var msg models.RawAssistantMessage
+			if err := json.Unmarshal(raw.Message, &msg); err == nil {
+				var parts []string
+				for _, c := range msg.Content {
+					switch c.Type {
+					case "text":
+						parts = append(parts, c.Text)
+					case "thinking":
+						parts = append(parts, c.Thinking)
+					case "tool_use":
+						parts = append(parts, fmt.Sprintf("[Tool: %s]", c.Name))
+					}
+				}
+				return strings.Join(parts, "\n")
+			}
+		}
+	case "tool_result":
+		if raw.Data != nil {
+			// Tool results can be complex - just store a summary
+			return "[Tool Result]"
+		}
+	}
+	return ""
+}
+
+// updateSessionMetadata updates session metadata from a turn
+func updateSessionMetadata(session *models.Session, turn *models.Turn, rawData []byte) {
+	// Set session ID
+	if session.ID == "" && turn.SessionID != "" {
+		session.ID = turn.SessionID
+	}
+
+	// Set start time from first turn
+	if session.StartedAt.IsZero() {
+		session.StartedAt = turn.Timestamp
+	}
+
+	// Accumulate tokens
+	session.InputTokens += int64(turn.InputTokens)
+	session.OutputTokens += int64(turn.OutputTokens)
+
+	// Extract model from assistant messages
+	if turn.Type == "assistant" && session.Model == "" {
+		var raw models.RawTurn
+		if err := json.Unmarshal(rawData, &raw); err == nil && raw.Message != nil {
+			var msg models.RawAssistantMessage
+			if err := json.Unmarshal(raw.Message, &msg); err == nil && msg.Model != "" {
+				session.Model = msg.Model
+			}
+		}
+	}
+
+	// Extract git branch
+	var raw models.RawTurn
+	if err := json.Unmarshal(rawData, &raw); err == nil && raw.GitBranch != "" && session.GitBranch == "" {
+		session.GitBranch = raw.GitBranch
+	}
+}
+
+// parseTimestamp parses ISO 8601 timestamp string
+func parseTimestamp(s string) (time.Time, error) {
+	if s == "" {
+		return time.Time{}, fmt.Errorf("empty timestamp")
+	}
+
+	// Try RFC3339 first (most common)
+	if t, err := time.Parse(time.RFC3339, s); err == nil {
+		return t, nil
+	}
+
+	// Try RFC3339Nano
+	if t, err := time.Parse(time.RFC3339Nano, s); err == nil {
+		return t, nil
+	}
+
+	// Try ISO 8601 with milliseconds
+	if t, err := time.Parse("2006-01-02T15:04:05.000Z", s); err == nil {
+		return t, nil
+	}
+
+	return time.Time{}, fmt.Errorf("unknown timestamp format: %s", s)
+}
+
+// ExtractToolUses extracts tool usage information from turns
+func ExtractToolUses(turns []models.Turn) []models.ToolUse {
+	var toolUses []models.ToolUse
+
+	for _, turn := range turns {
+		if turn.Type != "assistant" {
+			continue
+		}
+
+		var raw models.RawTurn
+		if err := json.Unmarshal(turn.RawJSON, &raw); err != nil || raw.Message == nil {
+			continue
+		}
+
+		var msg models.RawAssistantMessage
+		if err := json.Unmarshal(raw.Message, &msg); err != nil {
+			continue
+		}
+
+		for _, content := range msg.Content {
+			if content.Type != "tool_use" {
+				continue
+			}
+
+			toolUse := models.ToolUse{
+				TurnID:    turn.ID,
+				SessionID: turn.SessionID,
+				ToolName:  content.Name,
+				Timestamp: turn.Timestamp,
+			}
+
+			// Extract file path for file-related tools
+			if content.Input != nil {
+				toolUse.FilePath = extractFilePath(content.Name, content.Input)
+			}
+
+			toolUses = append(toolUses, toolUse)
+		}
+	}
+
+	return toolUses
+}
+
+// extractFilePath extracts file path from tool input
+func extractFilePath(toolName string, input json.RawMessage) string {
+	var params map[string]interface{}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return ""
+	}
+
+	// Different tools use different parameter names
+	pathKeys := []string{"file_path", "path", "filepath", "filename"}
+	for _, key := range pathKeys {
+		if v, ok := params[key].(string); ok && v != "" {
+			return v
+		}
+	}
+
+	return ""
+}
