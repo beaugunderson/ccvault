@@ -1,0 +1,37 @@
+# ABOUTME: Git ignore file for ccvault Go project
+# ABOUTME: Excludes build artifacts, editor files, and local data
+
+# Binaries
+ccvault
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+
+# Go workspace file
+go.work
+
+# Editor directories and files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Local data directory (don't commit user's vault)
+.ccvault/
+
+# Worktrees
+.worktrees/
+worktrees/
