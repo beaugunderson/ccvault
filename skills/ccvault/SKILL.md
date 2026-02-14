@@ -114,6 +114,7 @@ When in doubt, start with **Solution mining** if you have an error message or sp
 - Searching for MCP tool names like `mcp__ccvault__search_conversations` — the database stores tool names as they appear in Claude Code logs (e.g., `Bash`, `Read`, `Edit`, not the prefixed MCP names)
 - Not using `type` filter on `get_turns` — reading all turn types when you only need user or assistant messages
 - Repeating searches with the same query — if it didn't work, change the query terms or operators, don't retry the same thing
+- Relying on `has:error` or `has:subagent` operators — these are parsed but not yet wired into search filtering, so they silently return unfiltered results
 
 ## Quick Reference
 
