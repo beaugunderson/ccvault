@@ -74,7 +74,7 @@ changelog:
 
 brews:
   - repository:
-      owner: harperreed
+      owner: 2389-research
       name: homebrew-tap
       token: "{{ .Env.HOMEBREW_TAP_TOKEN }}"
     directory: Formula
