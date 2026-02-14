@@ -126,18 +126,19 @@ func (db *DB) GetSession(id string) (*models.Session, error) {
 // GetSessions retrieves sessions with optional filters
 func (db *DB) GetSessions(projectID int64, limit int) ([]models.Session, error) {
 	query := `
-		SELECT id, project_id, started_at, ended_at, model, git_branch,
-			turn_count, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-			source_file
-		FROM sessions`
+		SELECT s.id, s.project_id, s.started_at, s.ended_at, s.model, s.git_branch,
+			s.turn_count, s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_write_tokens,
+			s.source_file, COALESCE(p.path, '') as project_path
+		FROM sessions s
+		LEFT JOIN projects p ON s.project_id = p.id`
 
 	var args []interface{}
 	if projectID > 0 {
-		query += " WHERE project_id = ?"
+		query += " WHERE s.project_id = ?"
 		args = append(args, projectID)
 	}
 
-	query += " ORDER BY started_at DESC"
+	query += " ORDER BY s.started_at DESC"
 
 	if limit > 0 {
 		query += fmt.Sprintf(" LIMIT %d", limit)
@@ -166,6 +167,7 @@ func (db *DB) GetSessions(projectID int64, limit int) ([]models.Session, error) 
 			&s.CacheReadTokens,
 			&s.CacheWriteTokens,
 			&s.SourceFile,
+			&s.ProjectPath,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan session: %w", err)
