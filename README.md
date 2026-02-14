@@ -4,6 +4,9 @@ Archive and search your Claude Code conversation history.
 
 Inspired by [msgvault](https://github.com/wesm/msgvault), ccvault provides offline search, analytics, and AI integration for Claude Code sessions stored in `~/.claude`.
 
+<img width="557" height="563" alt="image" src="https://github.com/user-attachments/assets/5ce5ecee-f3eb-4a93-8685-c7b138ea08dd" />
+
+
 ## Features
 
 - **Full-text search** across all conversations with Gmail-like query syntax
