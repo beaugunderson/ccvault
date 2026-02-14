@@ -150,7 +150,7 @@ func (db *DB) GetProjects(orderBy string, limit int) ([]models.Project, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query projects: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var projects []models.Project
 	for rows.Next() {

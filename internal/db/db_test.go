@@ -22,13 +22,13 @@ func setupTestDB(t *testing.T) (*DB, func()) {
 
 	db, err := Open(tmpDir)
 	if err != nil {
-		os.RemoveAll(tmpDir)
+		_ = os.RemoveAll(tmpDir)
 		t.Fatalf("open db: %v", err)
 	}
 
 	cleanup := func() {
-		db.Close()
-		os.RemoveAll(tmpDir)
+		_ = db.Close()
+		_ = os.RemoveAll(tmpDir)
 	}
 
 	return db, cleanup
@@ -121,7 +121,7 @@ func TestProjectUpsertAccumulates(t *testing.T) {
 		SessionCount:   1,
 		TotalTokens:    1000,
 	}
-	db.UpsertProject(p)
+	_ = db.UpsertProject(p)
 
 	// Second insert (simulating another session)
 	p2 := &models.Project{
@@ -132,7 +132,7 @@ func TestProjectUpsertAccumulates(t *testing.T) {
 		SessionCount:   1,
 		TotalTokens:    500,
 	}
-	db.UpsertProject(p2)
+	_ = db.UpsertProject(p2)
 
 	// Verify accumulation
 	got, _ := db.GetProjectByPath(p.Path)
@@ -155,7 +155,7 @@ func TestSessionCRUD(t *testing.T) {
 		FirstSeenAt:    time.Now(),
 		LastActivityAt: time.Now(),
 	}
-	db.UpsertProject(p)
+	_ = db.UpsertProject(p)
 
 	// Create session
 	s := &models.Session{
@@ -203,7 +203,7 @@ func TestTurnCRUD(t *testing.T) {
 
 	// Setup project and session
 	p := &models.Project{Path: "/test", DisplayName: "test"}
-	db.UpsertProject(p)
+	_ = db.UpsertProject(p)
 
 	s := &models.Session{
 		ID:         "session-1",
@@ -211,7 +211,7 @@ func TestTurnCRUD(t *testing.T) {
 		StartedAt:  time.Now(),
 		SourceFile: "/test.jsonl",
 	}
-	db.UpsertSession(s)
+	_ = db.UpsertSession(s)
 
 	// Insert turns
 	turns := []models.Turn{
@@ -258,17 +258,17 @@ func TestFullTextSearch(t *testing.T) {
 
 	// Setup
 	p := &models.Project{Path: "/test", DisplayName: "test"}
-	db.UpsertProject(p)
+	_ = db.UpsertProject(p)
 
 	s := &models.Session{ID: "session-1", ProjectID: p.ID, StartedAt: time.Now(), SourceFile: "/test.jsonl"}
-	db.UpsertSession(s)
+	_ = db.UpsertSession(s)
 
 	turns := []models.Turn{
 		{ID: "turn-1", SessionID: s.ID, Type: "user", Timestamp: time.Now(), Content: "How do I implement a REST API in Go?"},
 		{ID: "turn-2", SessionID: s.ID, Type: "assistant", Timestamp: time.Now(), Content: "You can use the net/http package or a framework like Gin."},
 		{ID: "turn-3", SessionID: s.ID, Type: "user", Timestamp: time.Now(), Content: "What about database connections?"},
 	}
-	db.InsertTurns(turns)
+	_ = db.InsertTurns(turns)
 
 	// Search
 	results, err := db.SearchTurns("REST API", 10)
@@ -297,10 +297,10 @@ func TestToolUses(t *testing.T) {
 
 	// Setup
 	p := &models.Project{Path: "/test", DisplayName: "test"}
-	db.UpsertProject(p)
+	_ = db.UpsertProject(p)
 
 	s := &models.Session{ID: "session-1", ProjectID: p.ID, StartedAt: time.Now(), SourceFile: "/test.jsonl"}
-	db.UpsertSession(s)
+	_ = db.UpsertSession(s)
 
 	toolUses := []models.ToolUse{
 		{TurnID: "turn-1", SessionID: s.ID, ToolName: "Bash", FilePath: "", Timestamp: time.Now()},
@@ -357,8 +357,8 @@ func TestGetFirstAndLastActivity(t *testing.T) {
 
 	p1 := &models.Project{Path: "/test1", DisplayName: "test1", FirstSeenAt: earlier, LastActivityAt: earlier}
 	p2 := &models.Project{Path: "/test2", DisplayName: "test2", FirstSeenAt: now, LastActivityAt: now}
-	db.UpsertProject(p1)
-	db.UpsertProject(p2)
+	_ = db.UpsertProject(p1)
+	_ = db.UpsertProject(p2)
 
 	first, last, err := db.GetFirstAndLastActivity()
 	if err != nil {

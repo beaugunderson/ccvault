@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "ccvault": {
+      "type": "stdio",
+      "command": "ccvault",
+      "args": [
+        "mcp"
+      ],
+      "env": {}
+    }
+  }
+}

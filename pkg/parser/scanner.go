@@ -160,7 +160,7 @@ func ScanHistory(claudeHome string) ([]HistoryEntry, error) {
 		}
 		return nil, fmt.Errorf("open history file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	return ParseHistoryReader(f)
 }

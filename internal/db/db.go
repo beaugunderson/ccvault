@@ -49,7 +49,7 @@ func Open(dataDir string) (*DB, error) {
 
 	// Initialize schema
 	if err := db.init(); err != nil {
-		sqlDB.Close()
+		_ = sqlDB.Close()
 		return nil, fmt.Errorf("init schema: %w", err)
 	}
 
@@ -77,7 +77,7 @@ func (db *DB) Close() error {
 
 // BeginTx starts a new transaction
 func (db *DB) BeginTx() (*sql.Tx, error) {
-	return db.DB.Begin()
+	return db.Begin()
 }
 
 // WithTx executes a function within a transaction
@@ -88,7 +88,7 @@ func (db *DB) WithTx(fn func(*sql.Tx) error) error {
 	}
 
 	if err := fn(tx); err != nil {
-		tx.Rollback()
+		_ = tx.Rollback()
 		return err
 	}
 

@@ -15,7 +15,6 @@ var (
 	secondaryColor = lipgloss.Color("#10B981") // Green
 	mutedColor     = lipgloss.Color("#6B7280") // Gray
 	errorColor     = lipgloss.Color("#EF4444") // Red
-	bgColor        = lipgloss.Color("#1F2937") // Dark gray
 
 	// Title styles
 	titleStyle = lipgloss.NewStyle().
@@ -86,6 +85,38 @@ var (
 	// Error style
 	errorStyle = lipgloss.NewStyle().
 			Foreground(errorColor).
+			Bold(true)
+
+	// Tool styles
+	toolStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#F59E0B")) // Amber
+
+	thinkingStyle = lipgloss.NewStyle().
+			Italic(true).
+			Foreground(lipgloss.Color("#A78BFA")). // Light purple
+			PaddingLeft(2)
+
+	codeStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#FCD34D")). // Yellow
+			PaddingLeft(4)
+
+	pathStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#67E8F9")). // Cyan
+			PaddingLeft(4)
+
+	dimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#9CA3AF")). // Gray
+			PaddingLeft(4)
+
+	linkStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#60A5FA")). // Blue
+			Underline(true).
+			PaddingLeft(4)
+
+	// Status message style
+	secondaryStyle = lipgloss.NewStyle().
+			Foreground(secondaryColor).
 			Bold(true)
 )
 

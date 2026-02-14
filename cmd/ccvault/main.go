@@ -7,11 +7,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/2389-research/ccvault/internal/analytics"
 	"github.com/2389-research/ccvault/internal/config"
 	"github.com/2389-research/ccvault/internal/db"
+	"github.com/2389-research/ccvault/internal/export"
+	"github.com/2389-research/ccvault/internal/mcp"
 	"github.com/2389-research/ccvault/internal/search"
 	"github.com/2389-research/ccvault/internal/sync"
 	"github.com/2389-research/ccvault/internal/tui"
@@ -64,7 +68,7 @@ var syncCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Create syncer
 		syncer := sync.New(database, cfg.ClaudeHome,
@@ -116,7 +120,7 @@ var tuiCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		return tui.Run(database)
 	},
@@ -149,7 +153,7 @@ Supports Gmail-like query syntax:
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Parse and execute search
 		query := search.Parse(queryStr)
@@ -198,7 +202,7 @@ var statsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Get statistics
 		projectCount, projectTokens, err := database.GetProjectStats()
@@ -285,7 +289,7 @@ var listProjectsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		projects, err := database.GetProjects(sortBy, limit)
 		if err != nil {
@@ -335,7 +339,7 @@ var listSessionsCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		// Get project ID if filter specified
 		var projectID int64
@@ -419,7 +423,7 @@ var showCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("open database: %w", err)
 		}
-		defer database.Close()
+		defer func() { _ = database.Close() }()
 
 		session, err := database.GetSession(sessionID)
 		if err != nil {
@@ -473,15 +477,137 @@ var showCmd = &cobra.Command{
 	},
 }
 
-var serveCmd = &cobra.Command{
-	Use:   "serve",
+var exportCmd = &cobra.Command{
+	Use:   "export [session-id]",
+	Short: "Export a session to markdown",
+	Long: `Export a session to markdown format for easy reading or archival.
+
+The exported markdown includes:
+  - Session metadata (model, timestamps, tokens)
+  - Full conversation with user and assistant messages
+  - Tool usage details (commands, file paths, etc.)
+  - Tool results (optional, can be disabled)
+  - Thinking blocks (optional, collapsible)
+
+Examples:
+  ccvault export abc123-def456                    # Export to stdout
+  ccvault export abc123-def456 -o session.md     # Export to file
+  ccvault export abc123-def456 --no-thinking     # Exclude thinking blocks
+  ccvault export abc123-def456 --no-tool-results # Exclude tool results`,
+	Args: cobra.ExactArgs(1),
+	RunE: func(cmd *cobra.Command, args []string) error {
+		sessionID := args[0]
+		outputPath, _ := cmd.Flags().GetString("output")
+		includeThinking, _ := cmd.Flags().GetBool("thinking")
+		includeToolResults, _ := cmd.Flags().GetBool("tool-results")
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		database, err := db.Open(cfg.DataDir)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer func() { _ = database.Close() }()
+
+		session, err := database.GetSession(sessionID)
+		if err != nil {
+			return fmt.Errorf("get session: %w", err)
+		}
+		if session == nil {
+			return fmt.Errorf("session not found: %s", sessionID)
+		}
+
+		turns, err := database.GetTurns(sessionID)
+		if err != nil {
+			return fmt.Errorf("get turns: %w", err)
+		}
+
+		// Get project path for metadata
+		var projectPath string
+		if session.ProjectID > 0 {
+			project, err := database.GetProject(session.ProjectID)
+			if err == nil && project != nil {
+				projectPath = project.Path
+			}
+		}
+
+		// Create exporter
+		exporter := export.NewMarkdownExporter(
+			export.WithThinking(includeThinking),
+			export.WithToolResults(includeToolResults),
+		)
+
+		// Determine output destination
+		var writer *os.File
+		if outputPath != "" {
+			writer, err = os.Create(outputPath)
+			if err != nil {
+				return fmt.Errorf("create output file: %w", err)
+			}
+			defer func() { _ = writer.Close() }()
+		} else {
+			writer = os.Stdout
+		}
+
+		// Export
+		if err := exporter.Export(writer, session, turns, projectPath); err != nil {
+			return fmt.Errorf("export: %w", err)
+		}
+
+		if outputPath != "" {
+			fmt.Fprintf(os.Stderr, "Exported session to %s\n", outputPath)
+		}
+
+		return nil
+	},
+}
+
+var mcpCmd = &cobra.Command{
+	Use:   "mcp",
 	Short: "Start MCP server",
-	Long:  `Start the MCP server for AI assistant integration.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		port, _ := cmd.Flags().GetInt("port")
-		fmt.Printf("Starting MCP server on port %d...\n", port)
-		// TODO: Implement MCP server
-		fmt.Println("MCP server not yet implemented")
+	Long: `Start the MCP server for AI assistant integration.
+
+The server uses JSON-RPC 2.0 over stdio (Model Context Protocol).
+
+Tools:
+  - search_conversations: Full-text search across conversations
+  - get_session: Retrieve a specific session (JSON or markdown)
+  - list_sessions: List recent sessions
+  - list_projects: List all indexed projects
+  - get_stats: Get archive statistics
+  - get_analytics: Get detailed usage analytics
+
+Prompts:
+  - summarize_recent: Summarize recent activity
+  - analyze_project: Analyze a specific project
+  - find_solutions: Find past solutions for a topic
+  - review_session: Review a specific session
+  - compare_approaches: Compare approaches across sessions
+  - tool_usage_report: Analyze tool usage patterns
+
+Debug mode: Set CCVAULT_MCP_DEBUG=1 for verbose logging to stderr.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		database, err := db.Open(cfg.DataDir)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer func() { _ = database.Close() }()
+
+		server, err := mcp.NewServer(database, cfg)
+		if err != nil {
+			return fmt.Errorf("create server: %w", err)
+		}
+		defer func() { _ = server.Close() }()
+
+		return server.Run()
 	},
 }
 
@@ -489,9 +615,25 @@ var buildCacheCmd = &cobra.Command{
 	Use:   "build-cache",
 	Short: "Rebuild analytics cache",
 	Long:  `Rebuild the Parquet analytics cache for fast DuckDB queries.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		// TODO: Implement build-cache
-		fmt.Println("Build cache not yet implemented")
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		database, err := db.Open(cfg.DataDir)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer func() { _ = database.Close() }()
+
+		cacheDir := filepath.Join(cfg.DataDir, "analytics")
+		exporter := analytics.NewExporter(database, cacheDir)
+		exporter.SetProgressCallback(func(msg string) {
+			fmt.Println(msg)
+		})
+
+		return exporter.Export()
 	},
 }
 
@@ -505,7 +647,8 @@ func init() {
 	rootCmd.AddCommand(listProjectsCmd)
 	rootCmd.AddCommand(listSessionsCmd)
 	rootCmd.AddCommand(showCmd)
-	rootCmd.AddCommand(serveCmd)
+	rootCmd.AddCommand(exportCmd)
+	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(buildCacheCmd)
 
 	// Sync flags
@@ -527,8 +670,10 @@ func init() {
 	// Show flags
 	showCmd.Flags().Bool("json", false, "Output as JSON")
 
-	// Serve flags
-	serveCmd.Flags().Int("port", 8765, "Port for MCP server")
+	// Export flags
+	exportCmd.Flags().StringP("output", "o", "", "Output file path (default: stdout)")
+	exportCmd.Flags().Bool("thinking", true, "Include thinking blocks")
+	exportCmd.Flags().Bool("tool-results", true, "Include tool results")
 }
 
 func main() {

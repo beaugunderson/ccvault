@@ -23,11 +23,11 @@ func New(db *sql.DB) *Searcher {
 
 // Result represents a search result
 type Result struct {
-	Turn        models.Turn    `json:"turn"`
-	SessionID   string         `json:"session_id"`
-	ProjectPath string         `json:"project_path"`
-	Model       string         `json:"model,omitempty"`
-	Snippet     string         `json:"snippet"`
+	Turn        models.Turn `json:"turn"`
+	SessionID   string      `json:"session_id"`
+	ProjectPath string      `json:"project_path"`
+	Model       string      `json:"model,omitempty"`
+	Snippet     string      `json:"snippet"`
 }
 
 // Search executes a search query and returns results
@@ -43,7 +43,7 @@ func (s *Searcher) Search(q *Query, limit int) ([]Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("search query: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var results []Result
 	for rows.Next() {
@@ -139,7 +139,6 @@ func (s *Searcher) buildQuery(q *Query, limit int) (string, []interface{}) {
 	if !q.After.IsZero() {
 		conditions = append(conditions, fmt.Sprintf("t.timestamp > $%d", argNum))
 		args = append(args, q.After)
-		argNum++
 	}
 
 	// Build final query

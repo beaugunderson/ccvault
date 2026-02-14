@@ -21,7 +21,7 @@ func ParseSession(path string) ([]models.Turn, *models.Session, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("open session file: %w", err)
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	return ParseSessionReader(f, path)
 }
@@ -128,7 +128,7 @@ func extractContent(raw models.RawTurn) string {
 		if raw.Message != nil {
 			var msg models.RawUserMessage
 			if err := json.Unmarshal(raw.Message, &msg); err == nil {
-				return msg.Content
+				return extractUserContent(msg.Content)
 			}
 		}
 	case "assistant":
@@ -143,7 +143,7 @@ func extractContent(raw models.RawTurn) string {
 					case "thinking":
 						parts = append(parts, c.Thinking)
 					case "tool_use":
-						parts = append(parts, fmt.Sprintf("[Tool: %s]", c.Name))
+						parts = append(parts, formatToolUse(c.Name, c.Input))
 					}
 				}
 				return strings.Join(parts, "\n")
@@ -257,6 +257,135 @@ func ExtractToolUses(turns []models.Turn) []models.ToolUse {
 	}
 
 	return toolUses
+}
+
+// extractUserContent extracts text from user message content
+// Content can be a plain string or an array of content blocks
+func extractUserContent(content json.RawMessage) string {
+	if len(content) == 0 {
+		return ""
+	}
+
+	// Try parsing as a string first (most common case)
+	var str string
+	if err := json.Unmarshal(content, &str); err == nil {
+		return str
+	}
+
+	// Try parsing as an array of content blocks
+	var blocks []models.UserContentBlock
+	if err := json.Unmarshal(content, &blocks); err == nil {
+		var parts []string
+		for _, block := range blocks {
+			switch block.Type {
+			case "text":
+				if block.Text != "" {
+					parts = append(parts, block.Text)
+				}
+			case "tool_result":
+				// Tool results are usually system content, include for context
+				if block.Content != "" {
+					parts = append(parts, fmt.Sprintf("[Tool Result: %s]", truncate(block.Content, 200)))
+				}
+			}
+		}
+		return strings.Join(parts, "\n")
+	}
+
+	return ""
+}
+
+// truncate truncates a string to max length with ellipsis
+func truncate(s string, maxLen int) string {
+	if len(s) <= maxLen {
+		return s
+	}
+	return s[:maxLen-3] + "..."
+}
+
+// formatToolUse formats a tool use with key parameters
+func formatToolUse(toolName string, input json.RawMessage) string {
+	if len(input) == 0 {
+		return fmt.Sprintf("[Tool: %s]", toolName)
+	}
+
+	var params map[string]interface{}
+	if err := json.Unmarshal(input, &params); err != nil {
+		return fmt.Sprintf("[Tool: %s]", toolName)
+	}
+
+	// Extract key parameters based on tool type
+	var details []string
+
+	switch toolName {
+	case "Bash":
+		if cmd, ok := params["command"].(string); ok {
+			// Truncate long commands
+			if len(cmd) > 100 {
+				cmd = cmd[:97] + "..."
+			}
+			details = append(details, fmt.Sprintf("$ %s", cmd))
+		}
+	case "Read":
+		if fp, ok := params["file_path"].(string); ok {
+			details = append(details, fp)
+		}
+	case "Write":
+		if fp, ok := params["file_path"].(string); ok {
+			details = append(details, fmt.Sprintf("-> %s", fp))
+		}
+	case "Edit":
+		if fp, ok := params["file_path"].(string); ok {
+			details = append(details, fp)
+		}
+	case "Glob":
+		if pattern, ok := params["pattern"].(string); ok {
+			details = append(details, pattern)
+		}
+	case "Grep":
+		if pattern, ok := params["pattern"].(string); ok {
+			if len(pattern) > 50 {
+				pattern = pattern[:47] + "..."
+			}
+			details = append(details, fmt.Sprintf("/%s/", pattern))
+		}
+	case "Task":
+		if desc, ok := params["description"].(string); ok {
+			details = append(details, desc)
+		}
+	case "WebFetch":
+		if url, ok := params["url"].(string); ok {
+			details = append(details, url)
+		}
+	case "WebSearch":
+		if query, ok := params["query"].(string); ok {
+			details = append(details, fmt.Sprintf("\"%s\"", query))
+		}
+	case "TodoWrite":
+		if todos, ok := params["todos"].([]interface{}); ok {
+			details = append(details, fmt.Sprintf("%d items", len(todos)))
+		}
+	case "Skill":
+		if skill, ok := params["skill"].(string); ok {
+			details = append(details, skill)
+		}
+	default:
+		// For other tools, try to extract common parameters
+		for _, key := range []string{"file_path", "path", "query", "command", "name"} {
+			if v, ok := params[key].(string); ok && v != "" {
+				if len(v) > 60 {
+					v = v[:57] + "..."
+				}
+				details = append(details, v)
+				break
+			}
+		}
+	}
+
+	if len(details) > 0 {
+		return fmt.Sprintf("[Tool: %s] %s", toolName, strings.Join(details, " "))
+	}
+	return fmt.Sprintf("[Tool: %s]", toolName)
 }
 
 // extractFilePath extracts file path from tool input

@@ -26,7 +26,7 @@ func (db *DB) InsertTurnsTx(tx *sql.Tx, turns []models.Turn) error {
 	if err != nil {
 		return fmt.Errorf("prepare insert turns: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, t := range turns {
 		_, err := stmt.Exec(
@@ -58,7 +58,7 @@ func (db *DB) GetTurns(sessionID string) ([]models.Turn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query turns: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var turns []models.Turn
 	for rows.Next() {
@@ -126,7 +126,7 @@ func (db *DB) SearchTurns(query string, limit int) ([]models.Turn, error) {
 	if err != nil {
 		return nil, fmt.Errorf("search turns: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var turns []models.Turn
 	for rows.Next() {
@@ -211,7 +211,7 @@ func (db *DB) SearchTurnsWithFilters(textQuery string, projectID int64, model st
 	if err != nil {
 		return nil, fmt.Errorf("search turns with filters: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var turns []models.Turn
 	for rows.Next() {
@@ -265,7 +265,7 @@ func (db *DB) InsertToolUsesTx(tx *sql.Tx, toolUses []models.ToolUse) error {
 	if err != nil {
 		return fmt.Errorf("prepare insert tool_uses: %w", err)
 	}
-	defer stmt.Close()
+	defer func() { _ = stmt.Close() }()
 
 	for _, tu := range toolUses {
 		_, err := stmt.Exec(tu.TurnID, tu.SessionID, tu.ToolName, tu.FilePath, tu.Timestamp)
@@ -299,7 +299,7 @@ func (db *DB) GetToolUsageStats(limit int) (map[string]int, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query tool stats: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]int)
 	for rows.Next() {

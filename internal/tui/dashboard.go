@@ -5,7 +5,9 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/2389-research/ccvault/internal/db"
 	"github.com/2389-research/ccvault/pkg/models"
@@ -27,10 +29,13 @@ type DashboardModel struct {
 
 // Stats holds dashboard statistics
 type Stats struct {
-	Projects    int
-	Sessions    int
-	Turns       int
-	TotalTokens int64
+	Projects      int
+	Sessions      int
+	Turns         int
+	TotalTokens   int64
+	TokensByModel map[string]int64
+	FirstActivity time.Time
+	LastActivity  time.Time
 }
 
 // Menu items
@@ -70,12 +75,27 @@ func (m *DashboardModel) loadStats() tea.Msg {
 		return ErrorMsg{Err: err}
 	}
 
+	tokensByModel, err := m.db.GetTokensByModel()
+	if err != nil {
+		return ErrorMsg{Err: err}
+	}
+
+	firstActivity, lastActivity, err := m.db.GetFirstAndLastActivity()
+	if err != nil {
+		// Non-fatal, just use zero times
+		firstActivity = time.Time{}
+		lastActivity = time.Time{}
+	}
+
 	return statsLoadedMsg{
 		stats: &Stats{
-			Projects:    projectCount,
-			Sessions:    sessionCount,
-			Turns:       turnCount,
-			TotalTokens: totalTokens,
+			Projects:      projectCount,
+			Sessions:      sessionCount,
+			Turns:         turnCount,
+			TotalTokens:   totalTokens,
+			TokensByModel: tokensByModel,
+			FirstActivity: firstActivity,
+			LastActivity:  lastActivity,
 		},
 		topProjects: projects,
 	}
@@ -149,9 +169,7 @@ func (m *DashboardModel) View() string {
 	var b strings.Builder
 
 	// Title
-	b.WriteString(titleStyle.Render("ccvault"))
-	b.WriteString("\n")
-	b.WriteString(subtitleStyle.Render("Claude Code Conversation Archive"))
+	b.WriteString(titleStyle.Render("Claude Code Conversation Archive"))
 	b.WriteString("\n\n")
 
 	// Stats box
@@ -199,6 +217,7 @@ func (m *DashboardModel) View() string {
 func (m *DashboardModel) renderStats() string {
 	var lines []string
 
+	// Basic stats
 	lines = append(lines, fmt.Sprintf("%s %s",
 		statLabelStyle.Render("Projects:"),
 		statValueStyle.Render(fmt.Sprintf("%d", m.stats.Projects))))
@@ -214,6 +233,56 @@ func (m *DashboardModel) renderStats() string {
 	lines = append(lines, fmt.Sprintf("%s %s",
 		statLabelStyle.Render("Total Tokens:"),
 		formatTokens(m.stats.TotalTokens)))
+
+	// Date span
+	if !m.stats.FirstActivity.IsZero() && !m.stats.LastActivity.IsZero() {
+		dateSpan := fmt.Sprintf("%s to %s",
+			m.stats.FirstActivity.Format("Jan 2, 2006"),
+			m.stats.LastActivity.Format("Jan 2, 2006"))
+		days := int(m.stats.LastActivity.Sub(m.stats.FirstActivity).Hours() / 24)
+		if days > 0 {
+			dateSpan += fmt.Sprintf(" (%d days)", days)
+		}
+		lines = append(lines, fmt.Sprintf("%s %s",
+			statLabelStyle.Render("Date Span:"),
+			statValueStyle.Render(dateSpan)))
+	}
+
+	// Models used with tokens
+	if len(m.stats.TokensByModel) > 0 {
+		lines = append(lines, "")
+		lines = append(lines, lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("#E5E7EB")).Render("Models Used:"))
+
+		// Sort models by token count (descending)
+		type modelTokens struct {
+			model  string
+			tokens int64
+		}
+		var sorted []modelTokens
+		for model, tokens := range m.stats.TokensByModel {
+			sorted = append(sorted, modelTokens{model, tokens})
+		}
+		sort.Slice(sorted, func(i, j int) bool {
+			return sorted[i].tokens > sorted[j].tokens
+		})
+
+		for _, mt := range sorted {
+			// Shorten model name for display
+			modelName := mt.model
+			if len(modelName) > 30 {
+				// Extract meaningful part (e.g., "opus-4" from "claude-opus-4-...")
+				parts := strings.Split(modelName, "-")
+				if len(parts) >= 3 {
+					modelName = strings.Join(parts[1:3], "-")
+				} else {
+					modelName = modelName[:27] + "..."
+				}
+			}
+			lines = append(lines, fmt.Sprintf("  %-20s %s",
+				modelName,
+				formatTokens(mt.tokens)))
+		}
+	}
 
 	return boxStyle.Render(strings.Join(lines, "\n"))
 }

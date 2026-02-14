@@ -102,6 +102,7 @@ type Model struct {
 	projects     *ProjectsModel
 	sessions     *SessionsModel
 	conversation *ConversationModel
+	search       *SearchModel
 
 	// Navigation stack
 	viewStack []View
@@ -119,6 +120,7 @@ func New(database *db.DB) *Model {
 	m.projects = NewProjectsModel(database)
 	m.sessions = NewSessionsModel(database)
 	m.conversation = NewConversationModel(database)
+	m.search = NewSearchModel(database)
 
 	return m
 }
@@ -142,7 +144,21 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.popView()
 
 		case key.Matches(msg, keys.Back):
+			// In search view, only handle esc - let backspace pass through to input
+			if m.view == SearchView {
+				if msg.String() == "esc" {
+					// Only pop if esc is pressed (not backspace)
+					return m.popView()
+				}
+				// Let backspace pass through to search input
+				break
+			}
 			return m.popView()
+
+		case key.Matches(msg, keys.Search):
+			if m.view != SearchView {
+				return m.pushView(SearchView, nil)
+			}
 		}
 
 	case tea.WindowSizeMsg:
@@ -153,6 +169,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.projects.SetSize(msg.Width, msg.Height)
 		m.sessions.SetSize(msg.Width, msg.Height)
 		m.conversation.SetSize(msg.Width, msg.Height)
+		m.search.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case NavigateMsg:
@@ -174,6 +191,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = m.sessions.Update(msg)
 	case ConversationView:
 		cmd = m.conversation.Update(msg)
+	case SearchView:
+		cmd = m.search.Update(msg)
 	}
 
 	return m, cmd
@@ -194,6 +213,8 @@ func (m *Model) View() string {
 		return m.sessions.View()
 	case ConversationView:
 		return m.conversation.View()
+	case SearchView:
+		return m.search.View()
 	default:
 		return "Unknown view"
 	}
@@ -218,6 +239,8 @@ func (m *Model) pushView(view View, data interface{}) (*Model, tea.Cmd) {
 			m.conversation.SetSession(sessionID)
 		}
 		cmd = m.conversation.Init()
+	case SearchView:
+		cmd = m.search.Init()
 	}
 
 	return m, cmd

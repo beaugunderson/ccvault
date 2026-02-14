@@ -147,7 +147,7 @@ func (db *DB) GetSessions(projectID int64, limit int) ([]models.Session, error) 
 	if err != nil {
 		return nil, fmt.Errorf("query sessions: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	var sessions []models.Session
 	for rows.Next() {
@@ -261,7 +261,7 @@ func (db *DB) GetTokensByModel() (map[string]int64, error) {
 	if err != nil {
 		return nil, fmt.Errorf("query tokens by model: %w", err)
 	}
-	defer rows.Close()
+	defer func() { _ = rows.Close() }()
 
 	result := make(map[string]int64)
 	for rows.Next() {
