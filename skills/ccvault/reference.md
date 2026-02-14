@@ -5,10 +5,10 @@
 | Tool | Required Params | Optional Params | Returns | Notes |
 |------|----------------|-----------------|---------|-------|
 | `search_conversations` | `query` (string) | `limit` (number, default 10, max 50), `offset` (number) | Paginated results with 200-char snippets | Check `has_more` / `next_offset` for pagination |
-| `get_session_summary` | `session_id` (string) | — | Metadata, turn counts by type, top 10 tools used, first/last user messages (500 chars) | Most cost-effective entry point for any session |
+| `get_session_summary` | `session_id` (string) | — | Metadata, turn counts by type, top 10 tools used, first/last user messages (500 chars each) | Most cost-effective entry point for any session |
 | `get_turns` | `session_id` (string) | `offset` (number, default 0), `limit` (number, default 20, max 50), `type` (user/assistant/tool_result) | Paginated turns, content truncated at 1000 chars | Includes tool names; `has_thinking` flag on assistant turns |
 | `get_session` | `session_id` (string) | — | Full session as markdown | WARNING: returns warning object (no markdown) for 100+ turn sessions; truncates at 50K chars. Prefer summary + turns for large sessions |
-| `list_sessions` | — | `project` (string, partial match), `limit` (number, default 20, max 100) | Recent sessions sorted by date desc | Partial match on project path or display name |
+| `list_sessions` | — | `project` (string, partial match), `limit` (number, default 20, max 100) | Recent sessions sorted by date desc | Partial match on path or display name; returns error (not empty) if no project matches |
 | `list_projects` | — | `sort` (name/activity/tokens/sessions, default: activity), `limit` (number, default 50) | Projects with session counts and token usage | Use to discover project names before searching |
 | `get_stats` | — | — | Archive-wide counts: projects, sessions, turns, total tokens, model breakdown, top tools, date range | Fast overview of the entire archive |
 | `get_analytics` | — | `days` (number, default 30) | Daily token breakdown, top projects, model breakdown | Requires DuckDB analytics cache |
@@ -19,12 +19,12 @@
 |----------|--------|---------|-------|
 | Project | `project:name` | `project:myapp` | Partial match on path or display name |
 | Model | `model:name` | `model:opus` | Partial match (opus, sonnet, haiku) |
-| Tool | `tool:Name` | `tool:Bash` | Case-sensitive: `Bash`, `Edit`, `Read`, `Write`, `Grep`, `Glob` |
+| Tool | `tool:Name` | `tool:Bash` | Case-sensitive, must match exact tool name (e.g., `Bash`, `Read`, `Edit`, `Write`, `Grep`, `Glob`, `Task`, `WebFetch`) |
 | File | `file:path` | `file:auth.py` | Matches file paths mentioned in session |
 | Before | `before:DATE` | `before:2026-02-01` | See date formats below |
 | After | `after:DATE` | `after:thisweek` | See date formats below |
-| Has error | `has:error` | `has:error` | Sessions containing errors |
-| Has subagent | `has:subagent` | `has:agent` | `has:subagent` and `has:agent` both work |
+| Has error | `has:error` | `has:error` | Parsed but not yet wired into search filtering — may return unfiltered results |
+| Has subagent | `has:subagent` | `has:agent` | Parsed but not yet wired into search filtering — `has:subagent` and `has:agent` both accepted |
 | Exact phrase | `"phrase"` | `"deploy script"` | Quoted exact phrase matching |
 | Free text | `terms` | `authentication bug` | FTS5 full-text search on unquoted terms |
 
@@ -55,17 +55,11 @@ Operators combine freely: `project:myapp tool:Bash "deploy" after:thisweek`
 ## 5. Common Query Recipes
 
 ```
-# Find errors in a project
-project:myapp has:error
-
 # Recent Bash commands
 tool:Bash after:thisweek
 
 # Find discussions about a library
 "react-query" project:frontend
-
-# All subagent usage
-has:agent after:month
 
 # Find file-specific work
 file:auth.py project:backend
@@ -75,6 +69,12 @@ model:opus project:myapp
 
 # Combined date range
 after:2026-01-01 before:2026-02-01 project:myapp
+
+# Search for error messages
+"connection refused" project:backend
+
+# Find Edit-heavy sessions (refactoring)
+tool:Edit project:myapp after:month
 ```
 
 ## 6. Truncation Limits
