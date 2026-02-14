@@ -122,7 +122,8 @@ var tuiCmd = &cobra.Command{
 		}
 		defer func() { _ = database.Close() }()
 
-		return tui.Run(database)
+		cacheDir := filepath.Join(cfg.DataDir, "analytics")
+		return tui.Run(database, cacheDir)
 	},
 }
 

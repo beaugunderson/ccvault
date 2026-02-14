@@ -14,6 +14,7 @@ import (
 	"github.com/2389-research/ccvault/internal/db"
 	"github.com/2389-research/ccvault/internal/export"
 	"github.com/2389-research/ccvault/pkg/models"
+	"github.com/atotto/clipboard"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -86,6 +87,11 @@ type exportCompleteMsg struct {
 	err  error
 }
 
+type copyCompleteMsg struct {
+	count int
+	err   error
+}
+
 func (m *ConversationModel) exportSession() tea.Msg {
 	if m.session == nil {
 		return exportCompleteMsg{err: fmt.Errorf("no session loaded")}
@@ -136,6 +142,43 @@ func (m *ConversationModel) exportSession() tea.Msg {
 	return exportCompleteMsg{path: exportPath}
 }
 
+func (m *ConversationModel) copyToClipboard() tea.Msg {
+	if len(m.turns) == 0 {
+		return copyCompleteMsg{err: fmt.Errorf("no conversation to copy")}
+	}
+
+	// Build plain text content
+	var b strings.Builder
+	for _, t := range m.turns {
+		switch t.Type {
+		case "user":
+			b.WriteString("[USER] ")
+			b.WriteString(t.Timestamp.Format("15:04:05"))
+			b.WriteString("\n")
+			b.WriteString(t.Content)
+			b.WriteString("\n\n")
+		case "assistant":
+			b.WriteString("[ASSISTANT] ")
+			b.WriteString(t.Timestamp.Format("15:04:05"))
+			b.WriteString("\n")
+			b.WriteString(t.Content)
+			b.WriteString("\n\n")
+		case "tool_result":
+			b.WriteString("[TOOL RESULT] ")
+			b.WriteString(t.Timestamp.Format("15:04:05"))
+			b.WriteString("\n")
+			b.WriteString(t.Content)
+			b.WriteString("\n\n")
+		}
+	}
+
+	if err := clipboard.WriteAll(b.String()); err != nil {
+		return copyCompleteMsg{err: fmt.Errorf("copy to clipboard: %w", err)}
+	}
+
+	return copyCompleteMsg{count: len(m.turns)}
+}
+
 // Update handles conversation view events
 func (m *ConversationModel) Update(msg tea.Msg) tea.Cmd {
 	// Clear status message after timeout
@@ -160,6 +203,15 @@ func (m *ConversationModel) Update(msg tea.Msg) tea.Cmd {
 		m.statusClear = time.Now().Add(5 * time.Second)
 		return nil
 
+	case copyCompleteMsg:
+		if msg.err != nil {
+			m.statusMsg = fmt.Sprintf("Copy failed: %v", msg.err)
+		} else {
+			m.statusMsg = fmt.Sprintf("Copied %d turns to clipboard", msg.count)
+		}
+		m.statusClear = time.Now().Add(3 * time.Second)
+		return nil
+
 	case tea.KeyMsg:
 		switch {
 		case key.Matches(msg, keys.Up):
@@ -175,6 +227,8 @@ func (m *ConversationModel) Update(msg tea.Msg) tea.Cmd {
 			return m.loadConversation
 		case msg.String() == "e" || msg.String() == "x":
 			return m.exportSession
+		case msg.String() == "c":
+			return m.copyToClipboard
 		}
 
 	case tea.MouseMsg:
@@ -209,9 +263,13 @@ func (m *ConversationModel) SetSize(width, height int) {
 	m.height = height
 
 	// Update markdown renderer with new width
+	wrapWidth := width - 4
+	if wrapWidth < 20 {
+		wrapWidth = 20 // Minimum reasonable wrap width
+	}
 	renderer, err := glamour.NewTermRenderer(
 		glamour.WithAutoStyle(),
-		glamour.WithWordWrap(width-4),
+		glamour.WithWordWrap(wrapWidth),
 	)
 	if err == nil {
 		m.mdRenderer = renderer
@@ -260,7 +318,7 @@ func (m *ConversationModel) View() string {
 	if m.ready {
 		scrollPercent = int(m.viewport.ScrollPercent() * 100)
 	}
-	b.WriteString(helpStyle.Render(fmt.Sprintf("↑/↓: scroll • pgup/pgdn: page • e: export • %d%% • esc: back", scrollPercent)))
+	b.WriteString(helpStyle.Render(fmt.Sprintf("↑/↓: scroll • pgup/pgdn: page • c: copy • e: export • %d%% • esc: back", scrollPercent)))
 
 	return b.String()
 }

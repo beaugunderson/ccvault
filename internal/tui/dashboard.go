@@ -43,6 +43,7 @@ var dashboardItems = []string{
 	"Browse Projects",
 	"Recent Sessions",
 	"Search",
+	"Analytics",
 }
 
 // NewDashboardModel creates a new dashboard model
@@ -149,6 +150,10 @@ func (m *DashboardModel) selectItem() tea.Cmd {
 	case 2: // Search
 		return func() tea.Msg {
 			return NavigateMsg{View: SearchView}
+		}
+	case 3: // Analytics
+		return func() tea.Msg {
+			return NavigateMsg{View: AnalyticsView}
 		}
 	}
 	return nil

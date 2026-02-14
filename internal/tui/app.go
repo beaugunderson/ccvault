@@ -20,6 +20,7 @@ const (
 	SessionsView
 	ConversationView
 	SearchView
+	AnalyticsView
 )
 
 // KeyMap defines keyboard shortcuts
@@ -91,11 +92,12 @@ var keys = KeyMap{
 
 // Model is the main TUI model
 type Model struct {
-	db     *db.DB
-	view   View
-	width  int
-	height int
-	err    error
+	db       *db.DB
+	cacheDir string
+	view     View
+	width    int
+	height   int
+	err      error
 
 	// View-specific state
 	dashboard    *DashboardModel
@@ -103,15 +105,17 @@ type Model struct {
 	sessions     *SessionsModel
 	conversation *ConversationModel
 	search       *SearchModel
+	analytics    *AnalyticsModel
 
 	// Navigation stack
 	viewStack []View
 }
 
 // New creates a new TUI model
-func New(database *db.DB) *Model {
+func New(database *db.DB, cacheDir string) *Model {
 	m := &Model{
 		db:        database,
+		cacheDir:  cacheDir,
 		view:      DashboardView,
 		viewStack: []View{DashboardView},
 	}
@@ -121,6 +125,7 @@ func New(database *db.DB) *Model {
 	m.sessions = NewSessionsModel(database)
 	m.conversation = NewConversationModel(database)
 	m.search = NewSearchModel(database)
+	m.analytics = NewAnalyticsModel(cacheDir)
 
 	return m
 }
@@ -170,6 +175,7 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.sessions.SetSize(msg.Width, msg.Height)
 		m.conversation.SetSize(msg.Width, msg.Height)
 		m.search.SetSize(msg.Width, msg.Height)
+		m.analytics.SetSize(msg.Width, msg.Height)
 		return m, nil
 
 	case NavigateMsg:
@@ -193,6 +199,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = m.conversation.Update(msg)
 	case SearchView:
 		cmd = m.search.Update(msg)
+	case AnalyticsView:
+		cmd = m.analytics.Update(msg)
 	}
 
 	return m, cmd
@@ -215,6 +223,8 @@ func (m *Model) View() string {
 		return m.conversation.View()
 	case SearchView:
 		return m.search.View()
+	case AnalyticsView:
+		return m.analytics.View()
 	default:
 		return "Unknown view"
 	}
@@ -241,6 +251,8 @@ func (m *Model) pushView(view View, data interface{}) (*Model, tea.Cmd) {
 		cmd = m.conversation.Init()
 	case SearchView:
 		cmd = m.search.Init()
+	case AnalyticsView:
+		cmd = m.analytics.Init()
 	}
 
 	return m, cmd
@@ -267,9 +279,9 @@ type ErrorMsg struct {
 }
 
 // Run starts the TUI
-func Run(database *db.DB) error {
+func Run(database *db.DB, cacheDir string) error {
 	p := tea.NewProgram(
-		New(database),
+		New(database, cacheDir),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)

@@ -6,6 +6,7 @@ package analytics
 import (
 	"database/sql"
 	"fmt"
+	"os"
 	"path/filepath"
 	"time"
 
@@ -50,19 +51,26 @@ type DailyTokens struct {
 func (a *Analyzer) GetTokensByDay(days int) ([]DailyTokens, error) {
 	sessionsPath := filepath.Join(a.cacheDir, "sessions.parquet")
 
+	// Check if parquet file exists
+	if _, err := os.Stat(sessionsPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("analytics cache not found. Run 'ccvault build-cache' first")
+	}
+
+	// started_at is stored as TIMESTAMP_MILLIS in Parquet, DuckDB reads it as timestamp
+	cutoff := time.Now().AddDate(0, 0, -days)
 	query := fmt.Sprintf(`
 		SELECT
-			DATE_TRUNC('day', to_timestamp(started_at/1000)) as date,
+			DATE_TRUNC('day', started_at) as date,
 			SUM(input_tokens) as input_tokens,
 			SUM(output_tokens) as output_tokens,
 			SUM(total_tokens) as total_tokens,
 			COUNT(*) as session_count
 		FROM read_parquet('%s')
-		WHERE started_at > %d
-		GROUP BY DATE_TRUNC('day', to_timestamp(started_at/1000))
+		WHERE started_at > TIMESTAMP '%s'
+		GROUP BY DATE_TRUNC('day', started_at)
 		ORDER BY date DESC
 		LIMIT %d
-	`, sessionsPath, time.Now().AddDate(0, 0, -days).UnixMilli(), days)
+	`, sessionsPath, cutoff.Format("2006-01-02 15:04:05"), days)
 
 	rows, err := a.db.Query(query)
 	if err != nil {
@@ -94,12 +102,18 @@ type ProjectStats struct {
 func (a *Analyzer) GetTopProjects(limit int) ([]ProjectStats, error) {
 	sessionsPath := filepath.Join(a.cacheDir, "sessions.parquet")
 
+	// Check if parquet file exists
+	if _, err := os.Stat(sessionsPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("analytics cache not found. Run 'ccvault build-cache' first")
+	}
+
+	// started_at is already a timestamp from Parquet TIMESTAMP_MILLIS
 	query := fmt.Sprintf(`
 		SELECT
 			project_path,
 			COUNT(*) as session_count,
 			SUM(total_tokens) as total_tokens,
-			MAX(to_timestamp(started_at/1000)) as last_active
+			MAX(started_at) as last_active
 		FROM read_parquet('%s')
 		GROUP BY project_path
 		ORDER BY total_tokens DESC
@@ -134,6 +148,11 @@ type ModelStats struct {
 // GetTokensByModel returns token usage grouped by model
 func (a *Analyzer) GetTokensByModel() ([]ModelStats, error) {
 	sessionsPath := filepath.Join(a.cacheDir, "sessions.parquet")
+
+	// Check if parquet file exists
+	if _, err := os.Stat(sessionsPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("analytics cache not found. Run 'ccvault build-cache' first")
+	}
 
 	query := fmt.Sprintf(`
 		SELECT
@@ -177,12 +196,18 @@ type Summary struct {
 func (a *Analyzer) GetSummary() (*Summary, error) {
 	sessionsPath := filepath.Join(a.cacheDir, "sessions.parquet")
 
+	// Check if parquet file exists
+	if _, err := os.Stat(sessionsPath); os.IsNotExist(err) {
+		return nil, fmt.Errorf("analytics cache not found. Run 'ccvault build-cache' first")
+	}
+
+	// started_at is already a timestamp from Parquet TIMESTAMP_MILLIS
 	query := fmt.Sprintf(`
 		SELECT
 			COUNT(*) as total_sessions,
 			COALESCE(SUM(total_tokens), 0) as total_tokens,
-			MIN(to_timestamp(started_at/1000)) as first_session,
-			MAX(to_timestamp(started_at/1000)) as last_session,
+			MIN(started_at) as first_session,
+			MAX(started_at) as last_session,
 			COUNT(DISTINCT model) as unique_models
 		FROM read_parquet('%s')
 	`, sessionsPath)
