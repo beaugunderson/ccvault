@@ -351,13 +351,15 @@ func (m *AnalyticsModel) renderTopProjects() string {
 		return dimStyle.Render("No project data available")
 	}
 
+	home, _ := os.UserHomeDir()
+
 	var lines []string
 
 	// Header
-	header := fmt.Sprintf("%4s %-38s %8s %12s %12s",
-		"#", "Project", "Sessions", "Tokens", "Last Active")
+	header := fmt.Sprintf("%4s %-24s %-30s %8s %12s %12s",
+		"#", "Project", "Path", "Sessions", "Tokens", "Last Active")
 	lines = append(lines, lipgloss.NewStyle().Bold(true).Render(header))
-	lines = append(lines, strings.Repeat("─", 80))
+	lines = append(lines, strings.Repeat("─", 96))
 
 	// Find max for bar
 	var maxTokens int64
@@ -368,11 +370,22 @@ func (m *AnalyticsModel) renderTopProjects() string {
 	}
 
 	for i, p := range m.topProjects {
-		name := shortenPath(p.ProjectPath, 36)
+		name := filepath.Base(p.ProjectPath)
+		if len(name) > 22 {
+			name = "..." + name[len(name)-19:]
+		}
+		path := p.ProjectPath
+		if home != "" && strings.HasPrefix(path, home) {
+			path = "~" + path[len(home):]
+		}
+		if len(path) > 28 {
+			path = "..." + path[len(path)-25:]
+		}
 		bar := renderBar(p.TotalTokens, maxTokens, 10)
-		row := fmt.Sprintf("%4d %-38s %8d %12s %12s %s",
+		row := fmt.Sprintf("%4d %-24s %-30s %8d %12s %12s %s",
 			i+1,
 			name,
+			path,
 			p.SessionCount,
 			formatCompact(p.TotalTokens),
 			p.LastActive.Format("Jan 02"),

@@ -97,6 +97,36 @@ func (db *DB) Close() error {
 	return db.DB.Close()
 }
 
+// ResetAll deletes all data from all tables for a clean full resync
+func (db *DB) ResetAll() error {
+	// Drop FTS triggers and table first to avoid issues with corrupt FTS indexes
+	for _, stmt := range []string{
+		"DROP TRIGGER IF EXISTS turns_ai",
+		"DROP TRIGGER IF EXISTS turns_ad",
+		"DROP TRIGGER IF EXISTS turns_au",
+		"DROP TABLE IF EXISTS turns_fts",
+	} {
+		if _, err := db.Exec(stmt); err != nil {
+			return fmt.Errorf("drop fts: %w", err)
+		}
+	}
+
+	// Delete data in child-to-parent order
+	tables := []string{"tool_uses", "turns", "sessions", "projects", "source_files"}
+	for _, table := range tables {
+		if _, err := db.Exec("DELETE FROM " + table); err != nil {
+			return fmt.Errorf("delete from %s: %w", table, err)
+		}
+	}
+
+	// Recreate FTS table and triggers via schema init
+	if err := db.init(); err != nil {
+		return fmt.Errorf("reinit schema: %w", err)
+	}
+
+	return nil
+}
+
 // BeginTx starts a new transaction
 func (db *DB) BeginTx() (*sql.Tx, error) {
 	return db.Begin()

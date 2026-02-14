@@ -86,6 +86,14 @@ func (s *Syncer) Run() (*Stats, error) {
 	start := time.Now()
 	stats := &Stats{}
 
+	// Full sync: wipe all data first so stale projects/sessions don't linger
+	if s.full {
+		s.progress("Full sync: clearing existing data...")
+		if err := s.db.ResetAll(); err != nil {
+			return nil, fmt.Errorf("reset database: %w", err)
+		}
+	}
+
 	s.progress("Scanning %s for sessions...", s.claudeHome)
 
 	// Discover session files
