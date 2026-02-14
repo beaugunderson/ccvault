@@ -238,3 +238,35 @@ func TestParseDate_Invalid(t *testing.T) {
 		t.Errorf("Expected zero time for invalid date, got %v", result)
 	}
 }
+
+func TestEscapeFTS5Query_HyphenatedTerms(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"tree-sitter", `"tree-sitter"`},
+		{"simple", "simple"},
+		{"hello world", "hello world"},
+		{"vue-router react-dom", `"vue-router" "react-dom"`},
+		{`"already quoted"`, `"already quoted"`},
+		{"asterisk*", `"asterisk*"`},
+		{"(parens)", `"(parens)"`},
+		{"mixed-term normal", `"mixed-term" normal`},
+	}
+
+	for _, tt := range tests {
+		result := escapeFTS5Query(tt.input)
+		if result != tt.expected {
+			t.Errorf("escapeFTS5Query(%q) = %q, expected %q", tt.input, result, tt.expected)
+		}
+	}
+}
+
+func TestEscapeFTS5Query_InternalQuotes(t *testing.T) {
+	// Test that internal quotes are escaped
+	result := escapeFTS5Query(`say-"hello"`)
+	// The hyphen triggers quoting, and internal quotes should be escaped
+	if result != `"say-""hello"""` {
+		t.Errorf("escapeFTS5Query with internal quotes = %q, expected %q", result, `"say-""hello"""`)
+	}
+}

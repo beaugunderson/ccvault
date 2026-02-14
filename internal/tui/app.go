@@ -5,6 +5,7 @@ package tui
 
 import (
 	"fmt"
+	"time"
 
 	"github.com/2389-research/ccvault/internal/db"
 	"github.com/charmbracelet/bubbles/key"
@@ -21,6 +22,7 @@ const (
 	ConversationView
 	SearchView
 	AnalyticsView
+	SyncingView
 )
 
 // KeyMap defines keyboard shortcuts
@@ -92,12 +94,13 @@ var keys = KeyMap{
 
 // Model is the main TUI model
 type Model struct {
-	db       *db.DB
-	cacheDir string
-	view     View
-	width    int
-	height   int
-	err      error
+	db         *db.DB
+	cacheDir   string
+	claudeHome string
+	view       View
+	width      int
+	height     int
+	err        error
 
 	// View-specific state
 	dashboard    *DashboardModel
@@ -106,18 +109,20 @@ type Model struct {
 	conversation *ConversationModel
 	search       *SearchModel
 	analytics    *AnalyticsModel
+	syncing      *SyncingModel
 
 	// Navigation stack
 	viewStack []View
 }
 
 // New creates a new TUI model
-func New(database *db.DB, cacheDir string) *Model {
+func New(database *db.DB, cacheDir, claudeHome string) *Model {
 	m := &Model{
-		db:        database,
-		cacheDir:  cacheDir,
-		view:      DashboardView,
-		viewStack: []View{DashboardView},
+		db:         database,
+		cacheDir:   cacheDir,
+		claudeHome: claudeHome,
+		view:       DashboardView,
+		viewStack:  []View{DashboardView},
 	}
 
 	m.dashboard = NewDashboardModel(database)
@@ -126,19 +131,88 @@ func New(database *db.DB, cacheDir string) *Model {
 	m.conversation = NewConversationModel(database)
 	m.search = NewSearchModel(database)
 	m.analytics = NewAnalyticsModel(cacheDir)
+	m.syncing = NewSyncingModel(database, claudeHome)
 
 	return m
 }
 
+// syncCheckMsg is sent after checking sync status
+type syncCheckMsg struct {
+	needsSync bool
+	reason    string
+}
+
 // Init implements tea.Model
 func (m *Model) Init() tea.Cmd {
-	return m.dashboard.Init()
+	return m.checkSyncStatus
+}
+
+// checkSyncStatus checks if a sync is needed
+func (m *Model) checkSyncStatus() tea.Msg {
+	// Check if we have any sessions
+	count, _, _, err := m.db.GetSessionStats()
+	if err != nil {
+		// If we can't check, proceed to dashboard
+		return syncCheckMsg{needsSync: false}
+	}
+
+	// If no sessions, we definitely need to sync
+	if count == 0 {
+		return syncCheckMsg{needsSync: true, reason: "No conversations found. Running initial sync..."}
+	}
+
+	// Check if last activity is stale (more than 24 hours since last sync)
+	_, lastActivity, err := m.db.GetFirstAndLastActivity()
+	if err != nil {
+		return syncCheckMsg{needsSync: false}
+	}
+
+	// If last activity is more than 24 hours ago, suggest sync
+	if time.Since(lastActivity) > 24*time.Hour {
+		return syncCheckMsg{needsSync: true, reason: "Conversations may be out of date. Running sync..."}
+	}
+
+	return syncCheckMsg{needsSync: false}
 }
 
 // Update implements tea.Model
 func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+	case syncCheckMsg:
+		if msg.needsSync {
+			// Start syncing
+			m.view = SyncingView
+			m.viewStack = []View{SyncingView}
+			m.syncing = NewSyncingModel(m.db, m.claudeHome)
+			return m, m.syncing.Init()
+		}
+		// No sync needed, proceed to dashboard
+		return m, m.dashboard.Init()
+
+	case syncCompleteMsg:
+		// Sync is done, transition to dashboard
+		m.syncing.Update(msg)
+		// Give a moment to show completion, then transition
+		return m, tea.Tick(500*time.Millisecond, func(t time.Time) tea.Msg {
+			return syncDoneTransitionMsg{}
+		})
+
+	case syncDoneTransitionMsg:
+		// Refresh dashboard with new data
+		m.dashboard = NewDashboardModel(m.db)
+		m.view = DashboardView
+		m.viewStack = []View{DashboardView}
+		return m, m.dashboard.Init()
+
 	case tea.KeyMsg:
+		// If syncing is done and has error, any key continues
+		if m.view == SyncingView && m.syncing.IsDone() {
+			m.dashboard = NewDashboardModel(m.db)
+			m.view = DashboardView
+			m.viewStack = []View{DashboardView}
+			return m, m.dashboard.Init()
+		}
+
 		// Global key handling
 		switch {
 		case key.Matches(msg, keys.Quit):
@@ -201,6 +275,8 @@ func (m *Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = m.search.Update(msg)
 	case AnalyticsView:
 		cmd = m.analytics.Update(msg)
+	case SyncingView:
+		cmd = m.syncing.Update(msg)
 	}
 
 	return m, cmd
@@ -225,6 +301,8 @@ func (m *Model) View() string {
 		return m.search.View()
 	case AnalyticsView:
 		return m.analytics.View()
+	case SyncingView:
+		return m.syncing.View()
 	default:
 		return "Unknown view"
 	}
@@ -278,10 +356,13 @@ type ErrorMsg struct {
 	Err error
 }
 
+// syncDoneTransitionMsg signals time to transition from sync to dashboard
+type syncDoneTransitionMsg struct{}
+
 // Run starts the TUI
-func Run(database *db.DB, cacheDir string) error {
+func Run(database *db.DB, cacheDir, claudeHome string) error {
 	p := tea.NewProgram(
-		New(database, cacheDir),
+		New(database, cacheDir, claudeHome),
 		tea.WithAltScreen(),
 		tea.WithMouseCellMotion(),
 	)

@@ -6,6 +6,7 @@ package search
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"github.com/2389-research/ccvault/pkg/models"
@@ -90,7 +91,8 @@ func (s *Searcher) buildQuery(q *Query, limit int) (string, []interface{}) {
 	if q.Text != "" {
 		baseQuery += ` JOIN turns_fts fts ON t.rowid = fts.rowid`
 		conditions = append(conditions, fmt.Sprintf("turns_fts MATCH $%d", argNum))
-		args = append(args, q.Text)
+		// Escape the search text for FTS5 to handle special characters like hyphens
+		args = append(args, escapeFTS5Query(q.Text))
 		argNum++
 	}
 
@@ -195,4 +197,42 @@ func makeSnippet(content, searchTerm string, maxLen int) string {
 	snippet = strings.Join(strings.Fields(snippet), " ")
 
 	return snippet
+}
+
+// escapeFTS5Query escapes a search query for FTS5.
+// FTS5 treats certain characters as operators (AND, OR, NOT, -, etc).
+// This function quotes terms containing special characters to search them literally.
+func escapeFTS5Query(query string) string {
+	// Check if query is already quoted
+	if strings.HasPrefix(query, `"`) && strings.HasSuffix(query, `"`) {
+		return query
+	}
+
+	// FTS5 special characters that need escaping
+	// Hyphens are interpreted as NOT operator
+	// Other special chars: AND, OR, NOT, NEAR, parentheses, asterisk, caret
+	specialCharsRe := regexp.MustCompile(`[-*^()]`)
+
+	// Split into words and quote any that contain special characters
+	words := strings.Fields(query)
+	var result []string
+
+	for _, word := range words {
+		// Skip if already quoted
+		if strings.HasPrefix(word, `"`) && strings.HasSuffix(word, `"`) {
+			result = append(result, word)
+			continue
+		}
+
+		// If word contains special FTS5 characters, quote it
+		if specialCharsRe.MatchString(word) {
+			// Escape any internal double quotes
+			escaped := strings.ReplaceAll(word, `"`, `""`)
+			result = append(result, `"`+escaped+`"`)
+		} else {
+			result = append(result, word)
+		}
+	}
+
+	return strings.Join(result, " ")
 }
