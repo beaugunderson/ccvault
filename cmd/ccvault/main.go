@@ -44,6 +44,225 @@ var versionCmd = &cobra.Command{
 	},
 }
 
+var quickstartCmd = &cobra.Command{
+	Use:   "quickstart",
+	Short: "Get started with ccvault",
+	Long:  `Interactive quickstart guide for new users. Syncs data if needed and shows helpful next steps.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		fmt.Println("Welcome to ccvault!")
+		fmt.Println("==================")
+		fmt.Println()
+
+		// Load config
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		// Ensure data directory exists
+		if err := config.EnsureDataDir(cfg); err != nil {
+			return fmt.Errorf("create data dir: %w", err)
+		}
+
+		// Open database
+		database, err := db.Open(cfg.DataDir)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer func() { _ = database.Close() }()
+
+		// Check current state
+		sessionCount, turnCount, totalTokens, err := database.GetSessionStats()
+		if err != nil {
+			return fmt.Errorf("get stats: %w", err)
+		}
+
+		// If no data, run sync
+		if sessionCount == 0 {
+			fmt.Println("No conversations indexed yet. Let's sync your Claude Code history...")
+			fmt.Println()
+
+			syncer := sync.New(database, cfg.ClaudeHome,
+				sync.WithProgressCallback(func(msg string) {
+					fmt.Println("  " + msg)
+				}),
+			)
+
+			stats, err := syncer.Run()
+			if err != nil {
+				return fmt.Errorf("sync: %w", err)
+			}
+
+			fmt.Println()
+			fmt.Printf("Synced %d sessions with %d turns.\n", stats.SessionsIndexed, stats.TurnsIndexed)
+			fmt.Println()
+		} else {
+			fmt.Printf("Found %d sessions with %d turns (%s tokens).\n",
+				sessionCount, turnCount, formatTokens(totalTokens))
+			fmt.Println()
+		}
+
+		// Show next steps
+		fmt.Println("What would you like to do?")
+		fmt.Println()
+		fmt.Println("  ccvault tui              Launch interactive browser")
+		fmt.Println("  ccvault search <query>   Search conversations")
+		fmt.Println("  ccvault stats            View detailed statistics")
+		fmt.Println("  ccvault sync             Update with latest conversations")
+		fmt.Println("  ccvault mcp              Start MCP server for AI integration")
+		fmt.Println()
+		fmt.Println("Run 'ccvault --help' for all available commands.")
+
+		return nil
+	},
+}
+
+var orientCmd = &cobra.Command{
+	Use:   "orient",
+	Short: "Output database state for AI agents",
+	Long: `Output structured information about the ccvault database state.
+Designed for AI agents to understand available data and commands.
+
+Use --json for machine-readable output.`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		jsonOutput, _ := cmd.Flags().GetBool("json")
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		database, err := db.Open(cfg.DataDir)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer func() { _ = database.Close() }()
+
+		// Gather stats
+		projectCount, projectTokens, _ := database.GetProjectStats()
+		sessionCount, turnCount, sessionTokens, _ := database.GetSessionStats()
+		firstActivity, lastActivity, _ := database.GetFirstAndLastActivity()
+		toolStats, _ := database.GetToolUsageStats(5)
+		tokensByModel, _ := database.GetTokensByModel()
+
+		// Get recent projects
+		projects, _ := database.GetProjects("activity", 5)
+		projectNames := make([]string, 0, len(projects))
+		for _, p := range projects {
+			projectNames = append(projectNames, p.DisplayName)
+		}
+
+		orientation := map[string]interface{}{
+			"version": version,
+			"status":  "ready",
+			"database": map[string]interface{}{
+				"projects":     projectCount,
+				"sessions":     sessionCount,
+				"turns":        turnCount,
+				"total_tokens": sessionTokens,
+			},
+			"activity": map[string]interface{}{
+				"first_session": firstActivity.Format(time.RFC3339),
+				"last_session":  lastActivity.Format(time.RFC3339),
+				"days_span":     int(lastActivity.Sub(firstActivity).Hours() / 24),
+			},
+			"recent_projects": projectNames,
+			"top_tools":       toolStats,
+			"models":          tokensByModel,
+			"commands": map[string]string{
+				"search <query>":      "Full-text search across conversations",
+				"list-sessions":       "List recent sessions",
+				"list-projects":       "List all projects",
+				"show <session-id>":   "Display a specific session",
+				"export <session-id>": "Export session to markdown",
+				"stats":               "Show detailed statistics",
+				"sync":                "Update with latest conversations",
+				"tui":                 "Launch interactive browser",
+				"mcp":                 "Start MCP server",
+			},
+			"search_syntax": map[string]string{
+				"project:<name>":   "Filter by project",
+				"model:<name>":     "Filter by model",
+				"tool:<name>":      "Filter by tool used",
+				"after:<date>":     "Sessions after date",
+				"before:<date>":    "Sessions before date",
+				"\"exact phrase\"": "Exact phrase match",
+			},
+		}
+
+		// Handle empty database
+		if sessionCount == 0 {
+			orientation["status"] = "empty"
+			orientation["hint"] = "Run 'ccvault sync' to index conversations from ~/.claude"
+		}
+
+		if jsonOutput {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(orientation)
+		}
+
+		// Human-readable output
+		fmt.Println("=== ccvault Orientation ===")
+		fmt.Println()
+		fmt.Printf("Version: %s\n", version)
+		fmt.Printf("Status:  %s\n", orientation["status"])
+		fmt.Println()
+
+		if sessionCount == 0 {
+			fmt.Println("Database is empty. Run 'ccvault sync' to index conversations.")
+			return nil
+		}
+
+		fmt.Println("Database:")
+		fmt.Printf("  Projects: %d\n", projectCount)
+		fmt.Printf("  Sessions: %d\n", sessionCount)
+		fmt.Printf("  Turns:    %d\n", turnCount)
+		fmt.Printf("  Tokens:   %s\n", formatTokens(sessionTokens))
+		fmt.Println()
+
+		fmt.Println("Activity:")
+		fmt.Printf("  First: %s\n", firstActivity.Format("2006-01-02"))
+		fmt.Printf("  Last:  %s\n", lastActivity.Format("2006-01-02"))
+		fmt.Printf("  Span:  %d days\n", int(lastActivity.Sub(firstActivity).Hours()/24))
+		fmt.Println()
+
+		if len(projectNames) > 0 {
+			fmt.Println("Recent Projects:")
+			for _, name := range projectNames {
+				fmt.Printf("  - %s\n", name)
+			}
+			fmt.Println()
+		}
+
+		if len(tokensByModel) > 0 {
+			fmt.Println("Models Used:")
+			for model, tokens := range tokensByModel {
+				shortModel := model
+				if len(shortModel) > 30 {
+					shortModel = shortModel[:27] + "..."
+				}
+				fmt.Printf("  %-30s %s tokens\n", shortModel, formatTokens(tokens))
+			}
+			fmt.Println()
+		}
+
+		fmt.Println("Available Commands:")
+		fmt.Println("  search <query>        Full-text search")
+		fmt.Println("  list-sessions         List recent sessions")
+		fmt.Println("  show <session-id>     Display session")
+		fmt.Println("  stats                 Detailed statistics")
+		fmt.Println("  mcp                   Start MCP server")
+		fmt.Println()
+		fmt.Println("Use --json for machine-readable output.")
+
+		// Suppress unused variable warning
+		_ = projectTokens
+
+		return nil
+	},
+}
+
 var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Sync conversations from Claude Code",
@@ -641,6 +860,8 @@ var buildCacheCmd = &cobra.Command{
 func init() {
 	// Add commands
 	rootCmd.AddCommand(versionCmd)
+	rootCmd.AddCommand(quickstartCmd)
+	rootCmd.AddCommand(orientCmd)
 	rootCmd.AddCommand(syncCmd)
 	rootCmd.AddCommand(tuiCmd)
 	rootCmd.AddCommand(searchCmd)
@@ -651,6 +872,9 @@ func init() {
 	rootCmd.AddCommand(exportCmd)
 	rootCmd.AddCommand(mcpCmd)
 	rootCmd.AddCommand(buildCacheCmd)
+
+	// Orient flags
+	orientCmd.Flags().Bool("json", false, "Output as JSON for machine parsing")
 
 	// Sync flags
 	syncCmd.Flags().Bool("full", false, "Force full rescan instead of incremental")

@@ -65,6 +65,8 @@ ccvault stats
 
 | Command | Description |
 |---------|-------------|
+| `quickstart` | Interactive setup guide for new users |
+| `orient` | Database state summary for AI agents (use `--json`) |
 | `sync` | Sync conversations from Claude Code |
 | `tui` | Launch interactive terminal UI |
 | `search [query]` | Full-text search across conversations |
@@ -73,7 +75,7 @@ ccvault stats
 | `list-sessions` | List sessions (optionally filtered by project) |
 | `show [session-id]` | Display a specific session |
 | `build-cache` | Build Parquet analytics cache |
-| `serve` | Start MCP server for AI integration |
+| `mcp` | Start MCP server for AI integration |
 
 ## Search Syntax
 
