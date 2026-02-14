@@ -1,0 +1,106 @@
+// ABOUTME: Lip Gloss styles for the TUI
+// ABOUTME: Defines consistent styling across all TUI views
+
+package tui
+
+import (
+	"fmt"
+
+	"github.com/charmbracelet/lipgloss"
+)
+
+var (
+	// Colors
+	primaryColor   = lipgloss.Color("#7C3AED") // Purple
+	secondaryColor = lipgloss.Color("#10B981") // Green
+	mutedColor     = lipgloss.Color("#6B7280") // Gray
+	errorColor     = lipgloss.Color("#EF4444") // Red
+	bgColor        = lipgloss.Color("#1F2937") // Dark gray
+
+	// Title styles
+	titleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(primaryColor).
+			MarginBottom(1)
+
+	subtitleStyle = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			MarginBottom(1)
+
+	// List styles
+	selectedStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#FFFFFF")).
+			Background(primaryColor).
+			Padding(0, 1)
+
+	normalStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E5E7EB")).
+			Padding(0, 1)
+
+	// Stats styles
+	statLabelStyle = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			Width(15)
+
+	statValueStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(secondaryColor)
+
+	// Help styles
+	helpStyle = lipgloss.NewStyle().
+			Foreground(mutedColor).
+			MarginTop(1)
+
+	// Box styles
+	boxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(mutedColor).
+			Padding(1, 2)
+
+	// Header styles
+	headerStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#F3F4F6")).
+			Background(lipgloss.Color("#374151")).
+			Padding(0, 1).
+			Width(100)
+
+	// Content type styles
+	userStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#60A5FA")) // Blue
+
+	assistantStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("#34D399")) // Green
+
+	timestampStyle = lipgloss.NewStyle().
+			Foreground(mutedColor)
+
+	// Conversation content
+	contentStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("#E5E7EB")).
+			PaddingLeft(2)
+
+	// Error style
+	errorStyle = lipgloss.NewStyle().
+			Foreground(errorColor).
+			Bold(true)
+)
+
+// formatTokens formats a token count for display
+func formatTokens(n int64) string {
+	if n >= 1_000_000_000 {
+		return lipgloss.NewStyle().Render(
+			statValueStyle.Render(fmt.Sprintf("%.1fB", float64(n)/1_000_000_000)),
+		)
+	}
+	if n >= 1_000_000 {
+		return statValueStyle.Render(fmt.Sprintf("%.1fM", float64(n)/1_000_000))
+	}
+	if n >= 1_000 {
+		return statValueStyle.Render(fmt.Sprintf("%.1fK", float64(n)/1_000))
+	}
+	return statValueStyle.Render(fmt.Sprintf("%d", n))
+}

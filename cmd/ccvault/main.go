@@ -14,6 +14,7 @@ import (
 	"github.com/2389-research/ccvault/internal/db"
 	"github.com/2389-research/ccvault/internal/search"
 	"github.com/2389-research/ccvault/internal/sync"
+	"github.com/2389-research/ccvault/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -105,9 +106,19 @@ var tuiCmd = &cobra.Command{
 	Use:   "tui",
 	Short: "Launch interactive TUI",
 	Long:  `Open the interactive terminal UI for browsing and analyzing conversations.`,
-	Run: func(cmd *cobra.Command, args []string) {
-		// TODO: Implement TUI
-		fmt.Println("TUI not yet implemented")
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
+		}
+
+		database, err := db.Open(cfg.DataDir)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer database.Close()
+
+		return tui.Run(database)
 	},
 }
 
