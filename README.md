@@ -21,7 +21,7 @@ brew install 2389-research/tap/ccvault
 
 ### Using `go install`
 
-Requires Go 1.21 or later:
+Requires Go 1.25 or later:
 
 ```bash
 go install github.com/2389-research/ccvault/cmd/ccvault@latest
@@ -74,8 +74,10 @@ ccvault stats
 | `list-projects` | List all indexed projects |
 | `list-sessions` | List sessions (optionally filtered by project) |
 | `show [session-id]` | Display a specific session |
+| `export [session-id]` | Export a session to markdown |
 | `build-cache` | Build Parquet analytics cache |
 | `mcp` | Start MCP server for AI integration |
+| `version` | Print the version number |
 
 ## Search Syntax
 
@@ -85,9 +87,11 @@ ccvault supports Gmail-like query syntax:
 project:name     Filter by project path/name
 model:opus       Filter by model (partial match)
 tool:Bash        Sessions using specific tool
+file:path        Filter by file path
 before:date      Sessions before date (YYYY-MM-DD)
 after:date       Sessions after date
-has:tool         Sessions with any tool usage
+has:error        Sessions with errors
+has:subagent     Sessions with subagent usage
 "exact phrase"   Exact phrase match
 ```
 
@@ -104,14 +108,18 @@ ccvault search '"error handling" project:backend'
 ccvault includes an MCP (Model Context Protocol) server for AI assistant integration.
 
 ```bash
-ccvault serve
+ccvault mcp
 ```
 
 Available tools:
 - `search_conversations` - Full-text search across conversations
-- `get_session` - Retrieve a specific session with all turns
+- `get_session_summary` - Quick overview of a session (metadata, stats, tools used)
+- `get_turns` - Paginated turns from a session
+- `get_session` - Full session in markdown format
+- `list_sessions` - List recent sessions
 - `list_projects` - List all indexed projects
-- `get_analytics` - Get usage analytics summary
+- `get_stats` - Archive statistics
+- `get_analytics` - Detailed usage analytics
 
 ### Claude Desktop Configuration
 
@@ -122,11 +130,17 @@ Add to your Claude Desktop config (`~/Library/Application Support/Claude/claude_
   "mcpServers": {
     "ccvault": {
       "command": "ccvault",
-      "args": ["serve"]
+      "args": ["mcp"]
     }
   }
 }
 ```
+
+## Claude Code Skill
+
+ccvault ships with a [Claude Code skill](skills/ccvault/SKILL.md) that teaches AI agents how to effectively mine conversation history. It includes search strategy patterns, workflow prompts for session orientation and on-demand recall, and a full tool/query reference card.
+
+See [`skills/ccvault/`](skills/ccvault/) for the full skill.
 
 ## Configuration
 
@@ -155,6 +169,7 @@ ccvault/
     ├── db/          # SQLite layer with FTS5
     ├── sync/        # Incremental sync logic
     ├── search/      # Query parsing and execution
+    ├── export/      # Markdown export
     ├── tui/         # Bubble Tea terminal UI
     ├── analytics/   # DuckDB/Parquet export
     └── mcp/         # MCP server

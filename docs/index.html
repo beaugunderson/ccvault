@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ccvault - Archive & Search Your Claude Code Conversations</title>
+  <meta name="description" content="ccvault archives every Claude Code conversation for full-text search, analytics, and AI integration. Never lose a session again.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300..700;1,9..40,300..700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+  <style>
+    /* ===== DARK MATTER ARCHIVE ===== */
+    :root {
+      --bg-deep: #060a12;
+      --bg-primary: #0a0e17;
+      --bg-surface: #0f1520;
+      --bg-elevated: #151d2e;
+      --border: #1e2d4a;
+      --border-dim: #141e33;
+      --text-primary: #e8ecf4;
+      --text-secondary: #8a9bb8;
+      --text-dim: #4a5e7d;
+      --accent: #ff6b35;
+      --accent-glow: rgba(255, 107, 53, 0.15);
+      --accent-dim: #cc5529;
+      --moonlight: #c4d4e8;
+      --rec-red: #ff3b3b;
+      --font-display: 'Space Mono', monospace;
+      --font-body: 'DM Sans', sans-serif;
+    }
+
+    *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+    html {
+      scroll-behavior: smooth;
+      font-size: 16px;
+    }
+
+    body {
+      font-family: var(--font-body);
+      background: var(--bg-deep);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    a { color: var(--accent); text-decoration: none; transition: color 0.2s; }
+    a:hover { color: var(--text-primary); }
+
+    .container {
+      max-width: 1140px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ===== NAV ===== */
+    nav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 16px 0;
+      background: rgba(6, 10, 18, 0.8);
+      backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border-dim);
+    }
+
+    nav .container {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .nav-brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-family: var(--font-display);
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+    }
+
+    .nav-brand .vault-icon {
+      width: 28px;
+      height: 28px;
+      border: 2px solid var(--accent);
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.7rem;
+      color: var(--accent);
+      position: relative;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      color: var(--text-secondary);
+      font-size: 0.9rem;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--text-primary); }
+
+    .nav-links .btn-sm {
+      background: var(--accent);
+      color: var(--bg-deep);
+      padding: 8px 18px;
+      border-radius: 6px;
+      font-weight: 600;
+      font-size: 0.85rem;
+      transition: background 0.2s;
+    }
+
+    .nav-links .btn-sm:hover { background: var(--accent-dim); color: var(--bg-deep); }
+
+    /* ===== HERO ===== */
+    .hero {
+      position: relative;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      padding: 120px 0 80px;
+      overflow: hidden;
+    }
+
+    .hero-canvas {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      z-index: 0;
+    }
+
+    .hero-grid {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%;
+      height: 100%;
+      background-image:
+        linear-gradient(var(--border-dim) 1px, transparent 1px),
+        linear-gradient(90deg, var(--border-dim) 1px, transparent 1px);
+      background-size: 80px 80px;
+      opacity: 0.3;
+      mask-image: radial-gradient(ellipse at 50% 50%, black 20%, transparent 70%);
+      z-index: 1;
+    }
+
+    .hero .container { position: relative; z-index: 2; }
+
+    .rec-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 32px;
+      padding: 6px 14px;
+      border: 1px solid var(--border-dim);
+      border-radius: 4px;
+      background: rgba(15, 21, 32, 0.6);
+    }
+
+    .rec-dot {
+      width: 8px;
+      height: 8px;
+      background: var(--rec-red);
+      border-radius: 50%;
+      animation: pulse-rec 2s ease-in-out infinite;
+    }
+
+    @keyframes pulse-rec {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    .hero-headline {
+      font-family: var(--font-display);
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
+      font-weight: 700;
+      line-height: 1.15;
+      color: var(--text-primary);
+      max-width: 720px;
+      margin-bottom: 24px;
+    }
+
+    .hero-headline .accent { color: var(--accent); }
+
+    .hero-sub {
+      font-size: 1.15rem;
+      color: var(--text-secondary);
+      max-width: 560px;
+      margin-bottom: 40px;
+      line-height: 1.7;
+    }
+
+    .hero-actions {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      margin-bottom: 64px;
+      flex-wrap: wrap;
+    }
+
+    .btn-primary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--accent);
+      color: var(--bg-deep);
+      padding: 14px 28px;
+      border-radius: 8px;
+      font-weight: 600;
+      font-size: 1rem;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-dim);
+      color: var(--bg-deep);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 32px var(--accent-glow);
+    }
+
+    .btn-secondary {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: transparent;
+      color: var(--text-secondary);
+      padding: 14px 28px;
+      border-radius: 8px;
+      font-weight: 500;
+      font-size: 1rem;
+      border: 1px solid var(--border);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .btn-secondary:hover {
+      border-color: var(--text-dim);
+      color: var(--text-primary);
+      transform: translateY(-1px);
+    }
+
+    .hero-terminal {
+      max-width: 680px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 24px 80px rgba(0,0,0,0.5);
+    }
+
+    .terminal-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 12px 16px;
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border-dim);
+    }
+
+    .terminal-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--border);
+    }
+
+    .terminal-dot:nth-child(1) { background: #ff5f57; }
+    .terminal-dot:nth-child(2) { background: #ffbd2e; }
+    .terminal-dot:nth-child(3) { background: #28ca41; }
+
+    .terminal-title {
+      font-family: var(--font-display);
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-left: 8px;
+    }
+
+    .terminal-body {
+      padding: 20px 24px;
+      font-family: var(--font-display);
+      font-size: 0.82rem;
+      line-height: 1.8;
+      overflow-x: auto;
+    }
+
+    .terminal-body .prompt { color: var(--accent); }
+    .terminal-body .cmd { color: var(--text-primary); }
+    .terminal-body .dim { color: var(--text-dim); }
+    .terminal-body .result { color: var(--moonlight); }
+    .terminal-body .highlight { color: var(--accent); font-weight: 700; }
+
+    /* ===== FEATURES BENTO ===== */
+    .features {
+      padding: 120px 0;
+      position: relative;
+    }
+
+    .section-label {
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      color: var(--accent);
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+
+    .section-title {
+      font-family: var(--font-display);
+      font-size: clamp(1.5rem, 3vw, 2.2rem);
+      font-weight: 700;
+      line-height: 1.2;
+      margin-bottom: 16px;
+      max-width: 600px;
+    }
+
+    .section-desc {
+      color: var(--text-secondary);
+      font-size: 1.05rem;
+      max-width: 520px;
+      margin-bottom: 56px;
+    }
+
+    .bento-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      grid-template-rows: auto auto;
+      gap: 16px;
+    }
+
+    .bento-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-dim);
+      border-radius: 12px;
+      padding: 32px;
+      transition: all 0.3s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .bento-card:hover {
+      border-color: var(--border);
+      transform: translateY(-2px);
+      box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    }
+
+    .bento-card.span-2 { grid-column: span 2; }
+
+    .bento-icon {
+      width: 44px;
+      height: 44px;
+      border-radius: 10px;
+      background: var(--accent-glow);
+      border: 1px solid rgba(255, 107, 53, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 20px;
+      font-size: 1.2rem;
+    }
+
+    .bento-card h3 {
+      font-family: var(--font-display);
+      font-size: 1rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .bento-card p {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+      line-height: 1.6;
+    }
+
+    .bento-card .code-preview {
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      background: var(--bg-primary);
+      border: 1px solid var(--border-dim);
+      border-radius: 6px;
+      padding: 12px 16px;
+      margin-top: 16px;
+      line-height: 1.6;
+      overflow-x: auto;
+    }
+
+    .bento-card .code-preview .accent { color: var(--accent); }
+    .bento-card .code-preview .moonlight { color: var(--moonlight); }
+
+    /* ===== HOW IT WORKS ===== */
+    .how-it-works {
+      padding: 120px 0;
+      border-top: 1px solid var(--border-dim);
+    }
+
+    .steps {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 48px;
+      margin-top: 56px;
+    }
+
+    .step {
+      position: relative;
+    }
+
+    .step-number {
+      font-family: var(--font-display);
+      font-size: 3.5rem;
+      font-weight: 700;
+      color: var(--bg-elevated);
+      line-height: 1;
+      margin-bottom: 16px;
+      -webkit-text-stroke: 1px var(--border);
+    }
+
+    .step h3 {
+      font-family: var(--font-display);
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 10px;
+    }
+
+    .step p {
+      color: var(--text-secondary);
+      font-size: 0.92rem;
+    }
+
+    .step-cmd {
+      font-family: var(--font-display);
+      font-size: 0.8rem;
+      color: var(--accent);
+      margin-top: 12px;
+      padding: 8px 12px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-dim);
+      border-radius: 6px;
+      display: inline-block;
+    }
+
+    .step-connector {
+      position: absolute;
+      top: 40px;
+      right: -32px;
+      width: 16px;
+      height: 2px;
+      background: var(--border);
+    }
+
+    /* ===== SEARCH SHOWCASE ===== */
+    .search-showcase {
+      padding: 120px 0;
+      border-top: 1px solid var(--border-dim);
+    }
+
+    .search-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: start;
+    }
+
+    .search-operators {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .operator-row {
+      display: flex;
+      align-items: baseline;
+      gap: 16px;
+      padding: 12px 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-dim);
+      border-radius: 8px;
+      transition: border-color 0.2s;
+    }
+
+    .operator-row:hover { border-color: var(--border); }
+
+    .operator-key {
+      font-family: var(--font-display);
+      font-size: 0.82rem;
+      color: var(--accent);
+      white-space: nowrap;
+      min-width: 140px;
+    }
+
+    .operator-desc {
+      font-size: 0.88rem;
+      color: var(--text-secondary);
+    }
+
+    .search-examples {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-dim);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .search-examples-header {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border-dim);
+      font-family: var(--font-display);
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .search-example {
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border-dim);
+      font-family: var(--font-display);
+      font-size: 0.82rem;
+      transition: background 0.2s;
+    }
+
+    .search-example:last-child { border-bottom: none; }
+    .search-example:hover { background: var(--bg-elevated); }
+
+    .search-example .q { color: var(--moonlight); }
+    .search-example .op { color: var(--accent); }
+    .search-example .desc {
+      display: block;
+      color: var(--text-dim);
+      font-size: 0.72rem;
+      margin-top: 4px;
+    }
+
+    /* ===== MCP SECTION ===== */
+    .mcp-section {
+      padding: 120px 0;
+      border-top: 1px solid var(--border-dim);
+    }
+
+    .mcp-layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: center;
+    }
+
+    .mcp-tools {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .mcp-tool {
+      padding: 16px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-dim);
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .mcp-tool:hover {
+      border-color: var(--border);
+      transform: translateY(-1px);
+    }
+
+    .mcp-tool h4 {
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+      color: var(--accent);
+      margin-bottom: 6px;
+    }
+
+    .mcp-tool p {
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      line-height: 1.4;
+    }
+
+    /* ===== INSTALL SECTION ===== */
+    .install-section {
+      padding: 120px 0;
+      border-top: 1px solid var(--border-dim);
+    }
+
+    .install-options {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      margin-top: 56px;
+    }
+
+    .install-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border-dim);
+      border-radius: 12px;
+      padding: 32px;
+      transition: all 0.2s;
+    }
+
+    .install-card:hover {
+      border-color: var(--border);
+      transform: translateY(-2px);
+    }
+
+    .install-card h3 {
+      font-family: var(--font-display);
+      font-size: 0.9rem;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+
+    .install-card .install-desc {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      margin-bottom: 16px;
+    }
+
+    .install-card pre {
+      font-family: var(--font-display);
+      font-size: 0.78rem;
+      color: var(--moonlight);
+      background: var(--bg-primary);
+      border: 1px solid var(--border-dim);
+      border-radius: 6px;
+      padding: 14px 16px;
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+
+    .install-card pre .prompt { color: var(--accent); }
+
+    /* ===== CTA ===== */
+    .cta-section {
+      padding: 120px 0;
+      text-align: center;
+      position: relative;
+    }
+
+    .cta-section::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 600px;
+      height: 600px;
+      background: radial-gradient(circle, var(--accent-glow) 0%, transparent 70%);
+      pointer-events: none;
+      opacity: 0.4;
+    }
+
+    .cta-section .container { position: relative; z-index: 1; }
+
+    .cta-headline {
+      font-family: var(--font-display);
+      font-size: clamp(1.6rem, 3.5vw, 2.6rem);
+      font-weight: 700;
+      margin-bottom: 20px;
+    }
+
+    .cta-sub {
+      color: var(--text-secondary);
+      font-size: 1.1rem;
+      max-width: 480px;
+      margin: 0 auto 40px;
+    }
+
+    /* ===== FOOTER ===== */
+    footer {
+      padding: 48px 0;
+      border-top: 1px solid var(--border-dim);
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .footer-brand {
+      font-family: var(--font-display);
+      font-size: 0.85rem;
+      color: var(--text-dim);
+    }
+
+    .footer-links {
+      display: flex;
+      gap: 24px;
+      list-style: none;
+    }
+
+    .footer-links a {
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      transition: color 0.2s;
+    }
+
+    .footer-links a:hover { color: var(--text-secondary); }
+
+    /* ===== SCROLL ANIMATIONS ===== */
+    .reveal {
+      opacity: 0;
+      transform: translateY(20px);
+      filter: blur(4px);
+      transition: all 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+      filter: blur(0);
+    }
+
+    .reveal-delay-1 { transition-delay: 0.1s; }
+    .reveal-delay-2 { transition-delay: 0.2s; }
+    .reveal-delay-3 { transition-delay: 0.3s; }
+    .reveal-delay-4 { transition-delay: 0.4s; }
+    .reveal-delay-5 { transition-delay: 0.5s; }
+
+    /* ===== RESPONSIVE ===== */
+    @media (max-width: 900px) {
+      .bento-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .bento-card.span-2 { grid-column: span 1; }
+
+      .steps {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+
+      .step-connector { display: none; }
+
+      .search-grid,
+      .mcp-layout {
+        grid-template-columns: 1fr;
+        gap: 32px;
+      }
+
+      .mcp-tools {
+        grid-template-columns: 1fr;
+      }
+
+      .install-options {
+        grid-template-columns: 1fr;
+      }
+
+      .nav-links { display: none; }
+    }
+
+    @media (max-width: 600px) {
+      .hero { padding: 100px 0 60px; }
+      .hero-actions { flex-direction: column; align-items: stretch; }
+      .btn-primary, .btn-secondary { text-align: center; justify-content: center; }
+      .footer-inner { flex-direction: column; gap: 16px; text-align: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- NAV -->
+  <nav>
+    <div class="container">
+      <a href="#" class="nav-brand">
+        <div class="vault-icon">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2"/>
+            <circle cx="12" cy="12" r="3"/>
+            <line x1="12" y1="3" x2="12" y2="9"/>
+          </svg>
+        </div>
+        ccvault
+      </a>
+      <ul class="nav-links">
+        <li><a href="#features">Features</a></li>
+        <li><a href="#search">Search</a></li>
+        <li><a href="#mcp">MCP</a></li>
+        <li><a href="#install">Install</a></li>
+        <li><a href="https://github.com/2389-research/ccvault" class="btn-sm">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- HERO -->
+  <section class="hero">
+    <canvas class="hero-canvas" id="starfield"></canvas>
+    <div class="hero-grid"></div>
+    <div class="container">
+      <div class="rec-badge reveal">
+        <span class="rec-dot"></span>
+        Recording every session
+      </div>
+
+      <h1 class="hero-headline reveal reveal-delay-1">
+        What did you build <span class="accent">last Tuesday?</span>
+      </h1>
+
+      <p class="hero-sub reveal reveal-delay-2">
+        ccvault archives every Claude Code conversation into a searchable vault.
+        Full-text search, interactive TUI, DuckDB analytics, and MCP integration.
+      </p>
+
+      <div class="hero-actions reveal reveal-delay-3">
+        <a href="#install" class="btn-primary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Get Started
+        </a>
+        <a href="https://github.com/2389-research/ccvault" class="btn-secondary">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
+            <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z"/>
+          </svg>
+          View on GitHub
+        </a>
+      </div>
+
+      <div class="hero-terminal reveal reveal-delay-4">
+        <div class="terminal-bar">
+          <span class="terminal-dot"></span>
+          <span class="terminal-dot"></span>
+          <span class="terminal-dot"></span>
+          <span class="terminal-title">ccvault</span>
+        </div>
+        <div class="terminal-body">
+          <div><span class="prompt">$</span> <span class="cmd">ccvault search "debugging the auth flow"</span></div>
+          <br>
+          <div><span class="dim">Found 3 results:</span></div>
+          <br>
+          <div><span class="result">1. [assistant] 2026-02-12 14:32</span></div>
+          <div><span class="dim">   Project:</span> <span class="result">myapp</span></div>
+          <div><span class="dim">   ...found the root cause in the <span class="highlight">auth</span> middleware...</span></div>
+          <br>
+          <div><span class="result">2. [user] 2026-02-10 09:15</span></div>
+          <div><span class="dim">   Project:</span> <span class="result">backend-api</span></div>
+          <div><span class="dim">   ...the <span class="highlight">auth flow</span> breaks when the token expires...</span></div>
+          <br>
+          <div><span class="result">3. [assistant] 2026-01-28 16:44</span></div>
+          <div><span class="dim">   Project:</span> <span class="result">myapp</span></div>
+          <div><span class="dim">   ...let me <span class="highlight">debug</span> the session handling...</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- FEATURES -->
+  <section class="features" id="features">
+    <div class="container">
+      <div class="section-label reveal">Capabilities</div>
+      <h2 class="section-title reveal reveal-delay-1">Everything your conversation history needs</h2>
+      <p class="section-desc reveal reveal-delay-2">
+        From lightning-fast search to deep analytics, ccvault turns your ~/.claude directory into a structured, queryable archive.
+      </p>
+
+      <div class="bento-grid">
+        <div class="bento-card span-2 reveal reveal-delay-1">
+          <div class="bento-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/>
+              <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+            </svg>
+          </div>
+          <h3>Full-Text Search with FTS5</h3>
+          <p>Gmail-like query syntax with operators for projects, models, tools, dates, and exact phrases. Powered by SQLite FTS5 for instant results across thousands of sessions.</p>
+          <div class="code-preview">
+            <span class="accent">$</span> ccvault search <span class="moonlight">"project:myapp tool:Edit after:2026-01-01"</span>
+          </div>
+        </div>
+
+        <div class="bento-card reveal reveal-delay-2">
+          <div class="bento-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
+              <line x1="8" y1="21" x2="16" y2="21"/>
+              <line x1="12" y1="17" x2="12" y2="21"/>
+            </svg>
+          </div>
+          <h3>Interactive TUI</h3>
+          <p>Browse projects, drill into sessions, and read full conversations in a Bubble Tea-powered terminal interface.</p>
+        </div>
+
+        <div class="bento-card reveal reveal-delay-1">
+          <div class="bento-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+              <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+              <line x1="12" y1="22.08" x2="12" y2="12"/>
+            </svg>
+          </div>
+          <h3>DuckDB Analytics</h3>
+          <p>Export to Parquet and query with DuckDB for aggregate analytics: token usage, model breakdown, project trends.</p>
+        </div>
+
+        <div class="bento-card reveal reveal-delay-2">
+          <div class="bento-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2L2 7l10 5 10-5-10-5z"/>
+              <path d="M2 17l10 5 10-5"/>
+              <path d="M2 12l10 5 10-5"/>
+            </svg>
+          </div>
+          <h3>MCP Server</h3>
+          <p>8 tools and 6 prompts over JSON-RPC. Give your AI assistants access to your full conversation history.</p>
+        </div>
+
+        <div class="bento-card reveal reveal-delay-3">
+          <div class="bento-icon">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="16" y1="13" x2="8" y2="13"/>
+              <line x1="16" y1="17" x2="8" y2="17"/>
+            </svg>
+          </div>
+          <h3>Markdown Export</h3>
+          <p>Export any session to clean, readable markdown with tool usage details, thinking blocks, and full metadata.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- HOW IT WORKS -->
+  <section class="how-it-works">
+    <div class="container">
+      <div class="section-label reveal">Workflow</div>
+      <h2 class="section-title reveal reveal-delay-1">Three commands. That's it.</h2>
+
+      <div class="steps">
+        <div class="step reveal reveal-delay-1">
+          <div class="step-number">01</div>
+          <h3>Sync</h3>
+          <p>Index your conversations from ~/.claude into a local SQLite database. Incremental by default, only processes new sessions.</p>
+          <div class="step-cmd">ccvault sync</div>
+          <div class="step-connector"></div>
+        </div>
+
+        <div class="step reveal reveal-delay-2">
+          <div class="step-number">02</div>
+          <h3>Search</h3>
+          <p>Query across every conversation with Gmail-like operators. Filter by project, model, tool, date range, or free text.</p>
+          <div class="step-cmd">ccvault search "fixing the bug"</div>
+          <div class="step-connector"></div>
+        </div>
+
+        <div class="step reveal reveal-delay-3">
+          <div class="step-number">03</div>
+          <h3>Analyze</h3>
+          <p>Browse with the TUI, export to markdown, build analytics caches, or connect via MCP for AI-powered insights.</p>
+          <div class="step-cmd">ccvault tui</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- SEARCH SHOWCASE -->
+  <section class="search-showcase" id="search">
+    <div class="container">
+      <div class="section-label reveal">Query Language</div>
+      <h2 class="section-title reveal reveal-delay-1">Search like you mean it</h2>
+      <p class="section-desc reveal reveal-delay-2">
+        Gmail-like operators let you slice through thousands of sessions to find exactly what you need.
+      </p>
+
+      <div class="search-grid">
+        <div class="search-operators reveal reveal-delay-2">
+          <div class="operator-row">
+            <span class="operator-key">project:name</span>
+            <span class="operator-desc">Filter by project path or name</span>
+          </div>
+          <div class="operator-row">
+            <span class="operator-key">model:opus</span>
+            <span class="operator-desc">Filter by model (partial match)</span>
+          </div>
+          <div class="operator-row">
+            <span class="operator-key">tool:Bash</span>
+            <span class="operator-desc">Sessions using a specific tool</span>
+          </div>
+          <div class="operator-row">
+            <span class="operator-key">file:path</span>
+            <span class="operator-desc">Filter by file path</span>
+          </div>
+          <div class="operator-row">
+            <span class="operator-key">before: / after:</span>
+            <span class="operator-desc">Date range filters (YYYY-MM-DD)</span>
+          </div>
+          <div class="operator-row">
+            <span class="operator-key">has:error</span>
+            <span class="operator-desc">Sessions containing errors</span>
+          </div>
+          <div class="operator-row">
+            <span class="operator-key">has:subagent</span>
+            <span class="operator-desc">Sessions with subagent usage</span>
+          </div>
+          <div class="operator-row">
+            <span class="operator-key">"exact phrase"</span>
+            <span class="operator-desc">Exact phrase matching</span>
+          </div>
+        </div>
+
+        <div class="search-examples reveal reveal-delay-3">
+          <div class="search-examples-header">Example Queries</div>
+          <div class="search-example">
+            <span class="op">ccvault search</span> <span class="q">"debugging the API endpoint"</span>
+            <span class="desc">Free-text search across all conversations</span>
+          </div>
+          <div class="search-example">
+            <span class="op">ccvault search</span> <span class="q">"<span class="op">project:</span>myapp <span class="op">after:</span>2026-01-01"</span>
+            <span class="desc">Project-scoped with date filter</span>
+          </div>
+          <div class="search-example">
+            <span class="op">ccvault search</span> <span class="q">"<span class="op">tool:</span>Edit <span class="op">model:</span>opus"</span>
+            <span class="desc">Find Edit tool usage in Opus sessions</span>
+          </div>
+          <div class="search-example">
+            <span class="op">ccvault search</span> <span class="q">"<span class="op">has:</span>error <span class="op">project:</span>backend"</span>
+            <span class="desc">Error sessions in a specific project</span>
+          </div>
+          <div class="search-example">
+            <span class="op">ccvault search</span> <span class="q">'"error handling" <span class="op">project:</span>api'</span>
+            <span class="desc">Exact phrase with project filter</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- MCP -->
+  <section class="mcp-section" id="mcp">
+    <div class="container">
+      <div class="section-label reveal">AI Integration</div>
+      <h2 class="section-title reveal reveal-delay-1">Give your AI access to your history</h2>
+      <p class="section-desc reveal reveal-delay-2">
+        The MCP server exposes 8 tools and 6 prompts over JSON-RPC, letting any MCP-compatible assistant search and analyze your conversations.
+      </p>
+
+      <div class="mcp-layout">
+        <div class="mcp-tools reveal reveal-delay-2">
+          <div class="mcp-tool">
+            <h4>search_conversations</h4>
+            <p>Full-text search with pagination</p>
+          </div>
+          <div class="mcp-tool">
+            <h4>get_session_summary</h4>
+            <p>Quick session overview</p>
+          </div>
+          <div class="mcp-tool">
+            <h4>get_turns</h4>
+            <p>Paginated conversation turns</p>
+          </div>
+          <div class="mcp-tool">
+            <h4>get_session</h4>
+            <p>Full session as markdown</p>
+          </div>
+          <div class="mcp-tool">
+            <h4>list_sessions</h4>
+            <p>Recent sessions by project</p>
+          </div>
+          <div class="mcp-tool">
+            <h4>list_projects</h4>
+            <p>All indexed projects</p>
+          </div>
+          <div class="mcp-tool">
+            <h4>get_stats</h4>
+            <p>Archive statistics</p>
+          </div>
+          <div class="mcp-tool">
+            <h4>get_analytics</h4>
+            <p>Usage analytics + DuckDB</p>
+          </div>
+        </div>
+
+        <div class="reveal reveal-delay-3">
+          <h3 style="font-family: var(--font-display); font-size: 1rem; margin-bottom: 16px;">Claude Desktop Config</h3>
+          <div class="hero-terminal" style="max-width: 100%;">
+            <div class="terminal-bar">
+              <span class="terminal-dot"></span>
+              <span class="terminal-dot"></span>
+              <span class="terminal-dot"></span>
+              <span class="terminal-title">claude_desktop_config.json</span>
+            </div>
+            <div class="terminal-body">
+              <div><span class="dim">{</span></div>
+              <div>&nbsp;&nbsp;<span class="result">"mcpServers"</span><span class="dim">: {</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="result">"ccvault"</span><span class="dim">: {</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="result">"command"</span><span class="dim">:</span> <span class="highlight">"ccvault"</span><span class="dim">,</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="result">"args"</span><span class="dim">: [</span><span class="highlight">"mcp"</span><span class="dim">]</span></div>
+              <div>&nbsp;&nbsp;&nbsp;&nbsp;<span class="dim">}</span></div>
+              <div>&nbsp;&nbsp;<span class="dim">}</span></div>
+              <div><span class="dim">}</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- INSTALL -->
+  <section class="install-section" id="install">
+    <div class="container">
+      <div class="section-label reveal">Get Started</div>
+      <h2 class="section-title reveal reveal-delay-1">Install in seconds</h2>
+
+      <div class="install-options">
+        <div class="install-card reveal reveal-delay-1">
+          <h3>Homebrew</h3>
+          <p class="install-desc">macOS and Linux</p>
+          <pre><span class="prompt">$</span> brew install 2389-research/tap/ccvault</pre>
+        </div>
+
+        <div class="install-card reveal reveal-delay-2">
+          <h3>Go Install</h3>
+          <p class="install-desc">Requires Go 1.25+</p>
+          <pre><span class="prompt">$</span> go install github.com/2389-research/ccvault/cmd/ccvault@latest</pre>
+        </div>
+
+        <div class="install-card reveal reveal-delay-3">
+          <h3>From Source</h3>
+          <p class="install-desc">Build it yourself</p>
+          <pre><span class="prompt">$</span> git clone https://github.com/2389-research/ccvault.git
+<span class="prompt">$</span> cd ccvault
+<span class="prompt">$</span> make build</pre>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- CTA -->
+  <section class="cta-section">
+    <div class="container">
+      <h2 class="cta-headline reveal">
+        Stop losing conversations.<br>Start building on them.
+      </h2>
+      <p class="cta-sub reveal reveal-delay-1">
+        Every session you've had with Claude Code is sitting in ~/.claude right now. Make it searchable.
+      </p>
+      <div class="reveal reveal-delay-2">
+        <a href="#install" class="btn-primary" style="font-size: 1.05rem; padding: 16px 36px;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          Install ccvault
+        </a>
+      </div>
+    </div>
+  </section>
+
+  <!-- FOOTER -->
+  <footer>
+    <div class="container">
+      <div class="footer-inner">
+        <div class="footer-brand">ccvault &middot; MIT License &middot; Built by 2389 Research</div>
+        <ul class="footer-links">
+          <li><a href="https://github.com/2389-research/ccvault">GitHub</a></li>
+          <li><a href="https://github.com/2389-research/ccvault/issues">Issues</a></li>
+          <li><a href="https://github.com/2389-research/ccvault/blob/main/README.md">Docs</a></li>
+        </ul>
+      </div>
+    </div>
+  </footer>
+
+  <script>
+    // ===== STARFIELD =====
+    (function() {
+      const canvas = document.getElementById('starfield');
+      const ctx = canvas.getContext('2d');
+      let stars = [];
+      const STAR_COUNT = 120;
+
+      function resize() {
+        canvas.width = canvas.offsetWidth * window.devicePixelRatio;
+        canvas.height = canvas.offsetHeight * window.devicePixelRatio;
+        ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+        initStars();
+      }
+
+      function initStars() {
+        stars = [];
+        const w = canvas.offsetWidth;
+        const h = canvas.offsetHeight;
+        for (let i = 0; i < STAR_COUNT; i++) {
+          stars.push({
+            x: Math.random() * w,
+            y: Math.random() * h,
+            r: Math.random() * 1.2 + 0.3,
+            opacity: Math.random() * 0.5 + 0.1,
+            pulse: Math.random() * Math.PI * 2,
+            speed: Math.random() * 0.005 + 0.002,
+          });
+        }
+      }
+
+      function draw() {
+        const w = canvas.offsetWidth;
+        const h = canvas.offsetHeight;
+        ctx.clearRect(0, 0, w, h);
+        for (const s of stars) {
+          s.pulse += s.speed;
+          const opacity = s.opacity + Math.sin(s.pulse) * 0.15;
+          ctx.beginPath();
+          ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+          ctx.fillStyle = `rgba(196, 212, 232, ${Math.max(0, opacity)})`;
+          ctx.fill();
+        }
+        requestAnimationFrame(draw);
+      }
+
+      window.addEventListener('resize', resize);
+      resize();
+      draw();
+    })();
+
+    // ===== SCROLL REVEAL =====
+    (function() {
+      const observer = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (entry.isIntersecting) {
+              entry.target.classList.add('visible');
+            }
+          });
+        },
+        { threshold: 0.1, rootMargin: '0px 0px -40px 0px' }
+      );
+
+      document.querySelectorAll('.reveal').forEach((el) => observer.observe(el));
+    })();
+
+    // ===== SMOOTH SCROLL FOR ANCHOR LINKS =====
+    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
+      anchor.addEventListener('click', function(e) {
+        const target = document.querySelector(this.getAttribute('href'));
+        if (target) {
+          e.preventDefault();
+          target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+      });
+    });
+  </script>
+
+</body>
+</html>
