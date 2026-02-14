@@ -42,7 +42,12 @@ make cache
 
 - `cmd/ccvault/main.go` - CLI entry point
 - `pkg/parser/` - JSONL parsing
+- `pkg/models/` - Data structures
+- `internal/config/` - Configuration management
 - `internal/db/` - SQLite + FTS5 layer
+- `internal/sync/` - Incremental sync logic
+- `internal/search/` - Query parsing and execution
+- `internal/export/` - Markdown export
 - `internal/tui/` - Terminal UI
 - `internal/mcp/` - MCP server
 - `internal/analytics/` - DuckDB/Parquet
