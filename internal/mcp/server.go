@@ -247,7 +247,7 @@ func (s *Server) handleToolsList(req *jsonRPCRequest) {
 	tools := []tool{
 		{
 			Name:        "search_conversations",
-			Description: "Search through Claude Code conversation history. Returns matching turns with context snippets.",
+			Description: "Search through Claude Code conversation history. Returns compact results with snippets. Use offset for pagination.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]property{
@@ -257,7 +257,11 @@ func (s *Server) handleToolsList(req *jsonRPCRequest) {
 					},
 					"limit": {
 						Type:        "number",
-						Description: "Maximum results (default: 20, max: 100)",
+						Description: "Results per page (default: 10, max: 50)",
+					},
+					"offset": {
+						Type:        "number",
+						Description: "Skip first N results for pagination. Use next_offset from response.",
 					},
 				},
 				Required: []string{"query"},
@@ -490,25 +494,73 @@ func (s *Server) searchConversations(args map[string]interface{}) (interface{}, 
 		return nil, fmt.Errorf("query is required")
 	}
 
-	limit := 20
+	limit := 10
 	if l, ok := args["limit"].(float64); ok {
 		limit = int(l)
-		if limit > 100 {
-			limit = 100
+		if limit > 50 {
+			limit = 50
 		}
 	}
 
+	offset := 0
+	if o, ok := args["offset"].(float64); ok {
+		offset = int(o)
+	}
+
+	// Fetch one extra to determine if there are more results
 	parsed := search.Parse(query)
 	searcher := search.New(s.db.DB)
-	results, err := searcher.Search(parsed, limit)
+	results, err := searcher.Search(parsed, limit+offset+1)
 	if err != nil {
 		return nil, fmt.Errorf("search failed: %w", err)
 	}
 
-	return map[string]interface{}{
-		"count":   len(results),
-		"results": results,
-	}, nil
+	// Apply offset
+	if offset > len(results) {
+		results = nil
+	} else if offset > 0 {
+		results = results[offset:]
+	}
+
+	// Check if there are more results
+	hasMore := len(results) > limit
+	if hasMore {
+		results = results[:limit]
+	}
+
+	// Transform to compact results
+	compactResults := make([]map[string]interface{}, 0, len(results))
+	for _, r := range results {
+		// Truncate snippet to 200 chars
+		snippet := r.Snippet
+		if len(snippet) > 200 {
+			snippet = snippet[:200] + "..."
+		}
+
+		compactResults = append(compactResults, map[string]interface{}{
+			"session_id":   r.SessionID,
+			"turn_id":      r.Turn.ID,
+			"turn_type":    r.Turn.Type,
+			"timestamp":    r.Turn.Timestamp.Format(time.RFC3339),
+			"project_path": r.ProjectPath,
+			"model":        r.Model,
+			"snippet":      snippet,
+		})
+	}
+
+	response := map[string]interface{}{
+		"count":   len(compactResults),
+		"offset":  offset,
+		"limit":   limit,
+		"results": compactResults,
+	}
+
+	if hasMore {
+		response["next_offset"] = offset + limit
+		response["has_more"] = true
+	}
+
+	return response, nil
 }
 
 func (s *Server) getSession(args map[string]interface{}) (interface{}, error) {
