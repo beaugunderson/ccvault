@@ -44,6 +44,7 @@ var dashboardItems = []string{
 	"Recent Sessions",
 	"Search",
 	"Analytics",
+	"Sync Conversations",
 }
 
 // NewDashboardModel creates a new dashboard model
@@ -154,6 +155,10 @@ func (m *DashboardModel) selectItem() tea.Cmd {
 	case 3: // Analytics
 		return func() tea.Msg {
 			return NavigateMsg{View: AnalyticsView}
+		}
+	case 4: // Sync Conversations
+		return func() tea.Msg {
+			return NavigateMsg{View: SyncingView}
 		}
 	}
 	return nil

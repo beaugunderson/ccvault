@@ -34,6 +34,8 @@ type Session struct {
 	CacheReadTokens  int64     `json:"cache_read_tokens"`
 	CacheWriteTokens int64     `json:"cache_write_tokens"`
 	SourceFile       string    `json:"source_file"` // Path to .jsonl file
+	HasError         bool      `json:"has_error"`
+	HasSubagent      bool      `json:"has_subagent"`
 }
 
 // TotalTokens returns the sum of all token usage

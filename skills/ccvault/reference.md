@@ -23,8 +23,8 @@
 | File | `file:path` | `file:auth.py` | Matches file paths mentioned in session |
 | Before | `before:DATE` | `before:2026-02-01` | See date formats below |
 | After | `after:DATE` | `after:thisweek` | See date formats below |
-| Has error | `has:error` | `has:error` | Parsed but not yet wired into search filtering — may return unfiltered results |
-| Has subagent | `has:subagent` | `has:agent` | Parsed but not yet wired into search filtering — `has:subagent` and `has:agent` both accepted |
+| Has error | `has:error` | `has:error` | Filters to sessions flagged with tool errors during sync |
+| Has subagent | `has:subagent` | `has:agent` | Filters to sessions using Task (subagent) tool — `has:subagent` and `has:agent` both accepted |
 | Exact phrase | `"phrase"` | `"deploy script"` | Quoted exact phrase matching |
 | Free text | `terms` | `authentication bug` | FTS5 full-text search on unquoted terms |
 
@@ -72,6 +72,12 @@ after:2026-01-01 before:2026-02-01 project:myapp
 
 # Search for error messages
 "connection refused" project:backend
+
+# Find sessions with tool errors
+has:error project:myapp
+
+# Find sessions using subagents
+has:subagent after:thisweek
 
 # Find Edit-heavy sessions (refactoring)
 tool:Edit project:myapp after:month

@@ -16,8 +16,8 @@ func (db *DB) UpsertSession(s *models.Session) error {
 	query := `
 		INSERT INTO sessions (id, project_id, started_at, ended_at, model, git_branch,
 			turn_count, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-			source_file, source_mtime)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			source_file, source_mtime, has_error, has_subagent)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			ended_at = excluded.ended_at,
 			model = COALESCE(excluded.model, sessions.model),
@@ -26,7 +26,9 @@ func (db *DB) UpsertSession(s *models.Session) error {
 			output_tokens = excluded.output_tokens,
 			cache_read_tokens = excluded.cache_read_tokens,
 			cache_write_tokens = excluded.cache_write_tokens,
-			source_mtime = excluded.source_mtime`
+			source_mtime = excluded.source_mtime,
+			has_error = excluded.has_error,
+			has_subagent = excluded.has_subagent`
 
 	_, err := db.Exec(query,
 		s.ID,
@@ -42,6 +44,8 @@ func (db *DB) UpsertSession(s *models.Session) error {
 		s.CacheWriteTokens,
 		s.SourceFile,
 		time.Now(),
+		s.HasError,
+		s.HasSubagent,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert session: %w", err)
@@ -54,8 +58,8 @@ func (db *DB) UpsertSessionTx(tx *sql.Tx, s *models.Session) error {
 	query := `
 		INSERT INTO sessions (id, project_id, started_at, ended_at, model, git_branch,
 			turn_count, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens,
-			source_file, source_mtime)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			source_file, source_mtime, has_error, has_subagent)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 		ON CONFLICT(id) DO UPDATE SET
 			ended_at = excluded.ended_at,
 			model = COALESCE(excluded.model, sessions.model),
@@ -64,7 +68,9 @@ func (db *DB) UpsertSessionTx(tx *sql.Tx, s *models.Session) error {
 			output_tokens = excluded.output_tokens,
 			cache_read_tokens = excluded.cache_read_tokens,
 			cache_write_tokens = excluded.cache_write_tokens,
-			source_mtime = excluded.source_mtime`
+			source_mtime = excluded.source_mtime,
+			has_error = excluded.has_error,
+			has_subagent = excluded.has_subagent`
 
 	_, err := tx.Exec(query,
 		s.ID,
@@ -80,6 +86,8 @@ func (db *DB) UpsertSessionTx(tx *sql.Tx, s *models.Session) error {
 		s.CacheWriteTokens,
 		s.SourceFile,
 		time.Now(),
+		s.HasError,
+		s.HasSubagent,
 	)
 	if err != nil {
 		return fmt.Errorf("upsert session: %w", err)
@@ -248,6 +256,44 @@ func (db *DB) GetSourceMtime(path string) (time.Time, error) {
 		return mtime.Time, nil
 	}
 	return time.Time{}, nil
+}
+
+// GetAllSourceMtimes loads all source file modification times from the source_files tracking table
+func (db *DB) GetAllSourceMtimes() (map[string]time.Time, error) {
+	rows, err := db.Query("SELECT path, mtime FROM source_files")
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+
+	result := make(map[string]time.Time)
+	for rows.Next() {
+		var path string
+		var mtime time.Time
+		if err := rows.Scan(&path, &mtime); err != nil {
+			continue
+		}
+		result[path] = mtime
+	}
+	return result, rows.Err()
+}
+
+// UpsertSourceFileMtime records a source file's mtime after processing
+func (db *DB) UpsertSourceFileMtime(path string, mtime time.Time) error {
+	_, err := db.Exec(
+		"INSERT INTO source_files (path, mtime, synced_at) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, synced_at = excluded.synced_at",
+		path, mtime, time.Now(),
+	)
+	return err
+}
+
+// UpsertSourceFileMtimeTx records a source file's mtime within a transaction
+func (db *DB) UpsertSourceFileMtimeTx(tx *sql.Tx, path string, mtime time.Time) error {
+	_, err := tx.Exec(
+		"INSERT INTO source_files (path, mtime, synced_at) VALUES (?, ?, ?) ON CONFLICT(path) DO UPDATE SET mtime = excluded.mtime, synced_at = excluded.synced_at",
+		path, mtime, time.Now(),
+	)
+	return err
 }
 
 // GetTokensByModel returns token usage grouped by model

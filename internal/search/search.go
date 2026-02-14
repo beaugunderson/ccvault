@@ -143,6 +143,16 @@ func (s *Searcher) buildQuery(q *Query, limit int) (string, []interface{}) {
 		args = append(args, q.After)
 	}
 
+	// has:error — sessions flagged during sync as containing tool errors
+	if q.HasError {
+		conditions = append(conditions, "s.has_error = 1")
+	}
+
+	// has:subagent — sessions flagged during sync as using Task tool
+	if q.HasAgent {
+		conditions = append(conditions, "s.has_subagent = 1")
+	}
+
 	// Build final query
 	if len(conditions) > 0 {
 		baseQuery += " WHERE " + strings.Join(conditions, " AND ")

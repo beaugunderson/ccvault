@@ -331,6 +331,9 @@ func (m *Model) pushView(view View, data interface{}) (*Model, tea.Cmd) {
 		cmd = m.search.Init()
 	case AnalyticsView:
 		cmd = m.analytics.Init()
+	case SyncingView:
+		m.syncing = NewSyncingModel(m.db, m.claudeHome)
+		cmd = m.syncing.Init()
 	}
 
 	return m, cmd

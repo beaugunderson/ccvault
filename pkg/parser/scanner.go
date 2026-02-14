@@ -12,15 +12,17 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/2389-research/ccvault/pkg/models"
 )
 
 // SessionFile represents a discovered session file
 type SessionFile struct {
-	Path        string // Full path to .jsonl file
-	SessionID   string // UUID extracted from filename
-	ProjectPath string // Decoded project path
+	Path        string    // Full path to .jsonl file
+	SessionID   string    // UUID extracted from filename
+	ProjectPath string    // Decoded project path
+	ModTime     time.Time // File modification time from directory scan
 }
 
 // ScanClaudeHome scans the Claude Code data directory for session files
@@ -75,10 +77,17 @@ func ScanClaudeHome(claudeHome string) ([]SessionFile, error) {
 		// Decode URL-encoded project path
 		projectPath := decodeProjectPath(relPath)
 
+		// Get modification time from DirEntry (avoids separate stat call later)
+		var modTime time.Time
+		if info, err := d.Info(); err == nil {
+			modTime = info.ModTime()
+		}
+
 		sessions = append(sessions, SessionFile{
 			Path:        path,
 			SessionID:   sessionID,
 			ProjectPath: projectPath,
+			ModTime:     modTime,
 		})
 
 		return nil

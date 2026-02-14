@@ -56,12 +56,34 @@ func Open(dataDir string) (*DB, error) {
 	return db, nil
 }
 
-// init creates the database schema
+// init creates the database schema and runs migrations
 func (db *DB) init() error {
 	_, err := db.Exec(schema)
 	if err != nil {
 		return fmt.Errorf("exec schema: %w", err)
 	}
+
+	// Run migrations for columns added after initial schema
+	migrations := []string{
+		"ALTER TABLE sessions ADD COLUMN has_error BOOLEAN DEFAULT 0",
+		"ALTER TABLE sessions ADD COLUMN has_subagent BOOLEAN DEFAULT 0",
+	}
+	for _, m := range migrations {
+		// Ignore "duplicate column" errors — means migration already ran
+		_, _ = db.Exec(m)
+	}
+
+	// Partial indexes for fast has:error / has:subagent queries
+	indexes := []string{
+		"CREATE INDEX IF NOT EXISTS idx_sessions_has_error ON sessions(has_error) WHERE has_error = 1",
+		"CREATE INDEX IF NOT EXISTS idx_sessions_has_subagent ON sessions(has_subagent) WHERE has_subagent = 1",
+	}
+	for _, idx := range indexes {
+		if _, err := db.Exec(idx); err != nil {
+			return fmt.Errorf("create index: %w", err)
+		}
+	}
+
 	return nil
 }
 

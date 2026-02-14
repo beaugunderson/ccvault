@@ -93,3 +93,10 @@ CREATE TABLE IF NOT EXISTS sync_state (
     key TEXT PRIMARY KEY,
     value TEXT
 );
+
+-- Source file tracking for incremental sync
+CREATE TABLE IF NOT EXISTS source_files (
+    path TEXT PRIMARY KEY,
+    mtime DATETIME NOT NULL,
+    synced_at DATETIME NOT NULL
+);
