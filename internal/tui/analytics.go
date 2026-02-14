@@ -5,11 +5,13 @@ package tui
 
 import (
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"time"
 
 	"github.com/2389-research/ccvault/internal/analytics"
+	"github.com/2389-research/ccvault/internal/db"
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -18,6 +20,7 @@ import (
 
 // AnalyticsModel holds analytics view state
 type AnalyticsModel struct {
+	db          *db.DB
 	cacheDir    string
 	width       int
 	height      int
@@ -42,8 +45,9 @@ const (
 var tabNames = []string{"Summary", "Daily Usage", "Top Projects", "By Model"}
 
 // NewAnalyticsModel creates a new analytics model
-func NewAnalyticsModel(cacheDir string) *AnalyticsModel {
+func NewAnalyticsModel(database *db.DB, cacheDir string) *AnalyticsModel {
 	return &AnalyticsModel{
+		db:       database,
 		cacheDir: cacheDir,
 		loading:  true,
 	}
@@ -63,6 +67,15 @@ type analyticsLoadedMsg struct {
 }
 
 func (m *AnalyticsModel) loadAnalytics() tea.Msg {
+	// Auto-build cache if parquet file is missing
+	sessionsPath := filepath.Join(m.cacheDir, "sessions.parquet")
+	if _, err := os.Stat(sessionsPath); os.IsNotExist(err) {
+		exporter := analytics.NewExporter(m.db, m.cacheDir)
+		if err := exporter.Export(); err != nil {
+			return analyticsLoadedMsg{err: fmt.Errorf("build analytics cache: %w", err)}
+		}
+	}
+
 	analyzer, err := analytics.NewAnalyzer(m.cacheDir)
 	if err != nil {
 		return analyticsLoadedMsg{err: err}
