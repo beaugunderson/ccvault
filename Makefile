@@ -1,7 +1,7 @@
 # ABOUTME: Build and development targets for ccvault
 # ABOUTME: Provides build, test, and release automation
 
-.PHONY: build test clean install lint release
+.PHONY: build test test-race test-short test-coverage clean install lint release
 
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
 LDFLAGS := -ldflags "-X main.version=$(VERSION)"
@@ -12,8 +12,14 @@ build:
 test:
 	go test ./... -v
 
+test-race:
+	go test ./... -race
+
 test-short:
 	go test ./... -short
+
+test-coverage:
+	go test ./... -coverprofile=coverage.out
 
 lint:
 	golangci-lint run
