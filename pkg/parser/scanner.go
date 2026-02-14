@@ -100,7 +100,11 @@ func ScanClaudeHome(claudeHome string) ([]SessionFile, error) {
 	return sessions, nil
 }
 
-// decodeProjectPath converts URL-encoded directory name back to filesystem path
+// decodeProjectPath is a lossy fallback that converts encoded directory names back
+// to filesystem paths. Claude Code encodes paths by replacing ALL non-alphanumeric
+// chars with dashes, so paths containing real dashes (e.g. "canvas-plugins") are
+// decoded incorrectly as "canvas/plugins". The CWD field from JSONL is the
+// authoritative source; this is only used when CWD is missing.
 func decodeProjectPath(encoded string) string {
 	// Replace leading dash with /
 	if strings.HasPrefix(encoded, "-") {

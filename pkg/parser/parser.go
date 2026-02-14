@@ -46,7 +46,7 @@ func ParseSessionReader(r io.Reader, sourcePath string) ([]models.Turn, *models.
 			continue
 		}
 
-		turn, err := ParseTurn(line)
+		turn, raw, err := parseTurnInternal(line)
 		if err != nil {
 			// Log but continue - some entries may be malformed
 			continue
@@ -54,7 +54,7 @@ func ParseSessionReader(r io.Reader, sourcePath string) ([]models.Turn, *models.
 
 		if turn != nil {
 			turns = append(turns, *turn)
-			updateSessionMetadata(session, turn, line)
+			updateSessionMetadata(session, turn, raw)
 		}
 	}
 
@@ -79,14 +79,21 @@ func ParseSessionReader(r io.Reader, sourcePath string) ([]models.Turn, *models.
 
 // ParseTurn parses a single JSONL line into a Turn
 func ParseTurn(data []byte) (*models.Turn, error) {
+	turn, _, err := parseTurnInternal(data)
+	return turn, err
+}
+
+// parseTurnInternal parses a JSONL line and returns both the Turn and the
+// intermediate RawTurn so callers can reuse it without re-unmarshalling.
+func parseTurnInternal(data []byte) (*models.Turn, *models.RawTurn, error) {
 	var raw models.RawTurn
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("unmarshal turn: %w", err)
+		return nil, nil, fmt.Errorf("unmarshal turn: %w", err)
 	}
 
 	// Skip entries without UUID (like file-history-snapshot)
 	if raw.UUID == "" {
-		return nil, nil
+		return nil, &raw, nil
 	}
 
 	// Parse timestamp
@@ -118,7 +125,7 @@ func ParseTurn(data []byte) (*models.Turn, error) {
 		}
 	}
 
-	return turn, nil
+	return turn, &raw, nil
 }
 
 // extractContent extracts searchable text content from a turn
@@ -158,8 +165,8 @@ func extractContent(raw models.RawTurn) string {
 	return ""
 }
 
-// updateSessionMetadata updates session metadata from a turn
-func updateSessionMetadata(session *models.Session, turn *models.Turn, rawData []byte) {
+// updateSessionMetadata updates session metadata from a turn and its parsed raw entry
+func updateSessionMetadata(session *models.Session, turn *models.Turn, raw *models.RawTurn) {
 	// Set session ID
 	if session.ID == "" && turn.SessionID != "" {
 		session.ID = turn.SessionID
@@ -175,20 +182,20 @@ func updateSessionMetadata(session *models.Session, turn *models.Turn, rawData [
 	session.OutputTokens += int64(turn.OutputTokens)
 
 	// Extract model from assistant messages
-	if turn.Type == "assistant" && session.Model == "" {
-		var raw models.RawTurn
-		if err := json.Unmarshal(rawData, &raw); err == nil && raw.Message != nil {
-			var msg models.RawAssistantMessage
-			if err := json.Unmarshal(raw.Message, &msg); err == nil && msg.Model != "" {
-				session.Model = msg.Model
-			}
+	if turn.Type == "assistant" && session.Model == "" && raw.Message != nil {
+		var msg models.RawAssistantMessage
+		if err := json.Unmarshal(raw.Message, &msg); err == nil && msg.Model != "" {
+			session.Model = msg.Model
 		}
 	}
 
-	// Extract git branch
-	var raw models.RawTurn
-	if err := json.Unmarshal(rawData, &raw); err == nil && raw.GitBranch != "" && session.GitBranch == "" {
+	if raw.GitBranch != "" && session.GitBranch == "" {
 		session.GitBranch = raw.GitBranch
+	}
+
+	// CWD is the ground truth for project path; lock to first non-empty value
+	if raw.CWD != "" && session.ProjectPath == "" {
+		session.ProjectPath = raw.CWD
 	}
 }
 

@@ -179,7 +179,72 @@ func TestIsValidUUID(t *testing.T) {
 	}
 }
 
+func TestParseSessionReader_ExtractsCWD(t *testing.T) {
+	// CWD field in JSONL turns should be extracted as the session's ProjectPath.
+	// This is the ground truth for project paths, avoiding lossy decoding from
+	// the encoded directory name (where all non-alphanumeric chars become dashes).
+	input := `{"uuid":"turn1","sessionId":"sess1","type":"user","timestamp":"2026-02-02T20:00:00.000Z","cwd":"/Users/harper/canvas-plugins","message":{"role":"user","content":"Hello"}}
+{"uuid":"turn2","sessionId":"sess1","type":"assistant","timestamp":"2026-02-02T20:01:00.000Z","cwd":"/Users/harper/canvas-plugins","message":{"model":"claude-opus-4-5-20251101","role":"assistant","content":[{"type":"text","text":"Hi!"}],"usage":{"input_tokens":10,"output_tokens":5}}}`
+
+	_, session, err := ParseSessionReader(strings.NewReader(input), "/test/session.jsonl")
+	if err != nil {
+		t.Fatalf("ParseSessionReader failed: %v", err)
+	}
+
+	if session.ProjectPath != "/Users/harper/canvas-plugins" {
+		t.Errorf("Expected ProjectPath '/Users/harper/canvas-plugins', got %q", session.ProjectPath)
+	}
+}
+
+func TestParseSessionReader_CWDNotOverwrittenByEmpty(t *testing.T) {
+	// Once CWD is set from the first turn, later turns without CWD should not clear it.
+	input := `{"uuid":"turn1","sessionId":"sess1","type":"user","timestamp":"2026-02-02T20:00:00.000Z","cwd":"/Users/harper/buddy-web","message":{"role":"user","content":"Hello"}}
+{"uuid":"turn2","sessionId":"sess1","type":"assistant","timestamp":"2026-02-02T20:01:00.000Z","message":{"model":"claude-opus-4-5-20251101","role":"assistant","content":[{"type":"text","text":"Hi!"}],"usage":{"input_tokens":10,"output_tokens":5}}}`
+
+	_, session, err := ParseSessionReader(strings.NewReader(input), "/test/session.jsonl")
+	if err != nil {
+		t.Fatalf("ParseSessionReader failed: %v", err)
+	}
+
+	if session.ProjectPath != "/Users/harper/buddy-web" {
+		t.Errorf("Expected ProjectPath '/Users/harper/buddy-web', got %q", session.ProjectPath)
+	}
+}
+
+func TestParseSessionReader_CWDLocksToFirstValue(t *testing.T) {
+	// If CWD changes mid-session (e.g. user cd's), the first value wins.
+	input := `{"uuid":"turn1","sessionId":"sess1","type":"user","timestamp":"2026-02-02T20:00:00.000Z","cwd":"/Users/harper/project-a","message":{"role":"user","content":"Hello"}}
+{"uuid":"turn2","sessionId":"sess1","type":"user","timestamp":"2026-02-02T20:01:00.000Z","cwd":"/Users/harper/project-b","message":{"role":"user","content":"Changed dir"}}`
+
+	_, session, err := ParseSessionReader(strings.NewReader(input), "/test/session.jsonl")
+	if err != nil {
+		t.Fatalf("ParseSessionReader failed: %v", err)
+	}
+
+	if session.ProjectPath != "/Users/harper/project-a" {
+		t.Errorf("Expected ProjectPath to lock to first value '/Users/harper/project-a', got %q", session.ProjectPath)
+	}
+}
+
+func TestParseSessionReader_GitBranchExtracted(t *testing.T) {
+	// Verify git branch extraction is preserved after consolidation of unmarshal calls.
+	input := `{"uuid":"turn1","sessionId":"sess1","type":"user","timestamp":"2026-02-02T20:00:00.000Z","cwd":"/Users/harper/project","gitBranch":"feature/cool-thing","message":{"role":"user","content":"Hello"}}
+{"uuid":"turn2","sessionId":"sess1","type":"assistant","timestamp":"2026-02-02T20:01:00.000Z","message":{"model":"claude-opus-4-5-20251101","role":"assistant","content":[{"type":"text","text":"Hi!"}],"usage":{"input_tokens":10,"output_tokens":5}}}`
+
+	_, session, err := ParseSessionReader(strings.NewReader(input), "/test/session.jsonl")
+	if err != nil {
+		t.Fatalf("ParseSessionReader failed: %v", err)
+	}
+
+	if session.GitBranch != "feature/cool-thing" {
+		t.Errorf("Expected GitBranch 'feature/cool-thing', got %q", session.GitBranch)
+	}
+}
+
 func TestDecodeProjectPath(t *testing.T) {
+	// decodeProjectPath is a lossy fallback: it replaces ALL dashes with slashes,
+	// so paths with real dashes (e.g. "canvas-plugins") are decoded incorrectly.
+	// The CWD field from JSONL is the authoritative source for project paths.
 	tests := []struct {
 		input    string
 		expected string
@@ -187,6 +252,8 @@ func TestDecodeProjectPath(t *testing.T) {
 		{"-Users-harper-project", "/Users/harper/project"},
 		{"-Users-harper-Public-src-2389-ccvault", "/Users/harper/Public/src/2389/ccvault"},
 		{"simple", "simple"},
+		// Demonstrates the lossy behavior: "canvas-plugins" → "canvas/plugins" (wrong!)
+		{"-Users-harper-canvas-plugins", "/Users/harper/canvas/plugins"},
 	}
 
 	for _, tc := range tests {

@@ -55,6 +55,6 @@ make cache
 ## Important Notes
 
 - Session files are JSONL with nested message structures
-- Project paths in Claude are URL-encoded directory names
+- Project paths in Claude use dash-separated encoding of filesystem paths (slashes become dashes), with URL encoding for special characters
 - FTS5 uses triggers to auto-sync with turns table
 - Incremental sync tracks file modification times

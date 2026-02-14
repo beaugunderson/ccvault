@@ -115,9 +115,7 @@ func (s *Syncer) Run() (*Stats, error) {
 	// Process each session
 	total := len(sessionFiles)
 	for i, sf := range sessionFiles {
-		projectsSeen[sf.ProjectPath] = true
-
-		if err := s.processSession(sf, stats, storedMtimes); err != nil {
+		if err := s.processSession(sf, stats, storedMtimes, projectsSeen); err != nil {
 			stats.Errors = append(stats.Errors, fmt.Errorf("session %s: %w", sf.SessionID, err))
 			if s.verbose {
 				s.progress("Error processing %s: %v", sf.SessionID, err)
@@ -141,11 +139,13 @@ func (s *Syncer) Run() (*Stats, error) {
 }
 
 // processSession handles a single session file
-func (s *Syncer) processSession(sf parser.SessionFile, stats *Stats, storedMtimes map[string]time.Time) error {
+func (s *Syncer) processSession(sf parser.SessionFile, stats *Stats, storedMtimes map[string]time.Time, projectsSeen map[string]bool) error {
 	// Check if we need to process this file
 	if !s.full {
 		if !s.needsSync(sf, storedMtimes) {
 			stats.SessionsSkipped++
+			// For skipped sessions, use scanner's path as best-effort approximation
+			projectsSeen[sf.ProjectPath] = true
 			return nil
 		}
 	}
@@ -163,8 +163,12 @@ func (s *Syncer) processSession(sf parser.SessionFile, stats *Stats, storedMtime
 		return nil // Empty or invalid session
 	}
 
-	// Set project path from scanner
-	session.ProjectPath = sf.ProjectPath
+	// Prefer CWD extracted from JSONL (ground truth) over scanner's lossy decode
+	if session.ProjectPath == "" {
+		session.ProjectPath = sf.ProjectPath
+	}
+
+	projectsSeen[session.ProjectPath] = true
 
 	// Extract tool uses
 	toolUses := parser.ExtractToolUses(turns)
@@ -177,8 +181,8 @@ func (s *Syncer) processSession(sf parser.SessionFile, stats *Stats, storedMtime
 	err = s.db.WithTx(func(tx *sql.Tx) error {
 		// Upsert project
 		project := &models.Project{
-			Path:           sf.ProjectPath,
-			DisplayName:    parser.GetDisplayName(sf.ProjectPath),
+			Path:           session.ProjectPath,
+			DisplayName:    parser.GetDisplayName(session.ProjectPath),
 			FirstSeenAt:    session.StartedAt,
 			LastActivityAt: session.EndedAt,
 			SessionCount:   1,
