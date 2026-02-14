@@ -6,7 +6,11 @@ package main
 import (
 	"fmt"
 	"os"
+	"time"
 
+	"github.com/2389-research/ccvault/internal/config"
+	"github.com/2389-research/ccvault/internal/db"
+	"github.com/2389-research/ccvault/internal/sync"
 	"github.com/spf13/cobra"
 )
 
@@ -36,15 +40,61 @@ var syncCmd = &cobra.Command{
 	Use:   "sync",
 	Short: "Sync conversations from Claude Code",
 	Long:  `Scan ~/.claude and index new or updated sessions into the ccvault database.`,
-	Run: func(cmd *cobra.Command, args []string) {
+	RunE: func(cmd *cobra.Command, args []string) error {
 		full, _ := cmd.Flags().GetBool("full")
-		if full {
-			fmt.Println("Running full sync...")
-		} else {
-			fmt.Println("Running incremental sync...")
+		verbose, _ := cmd.Flags().GetBool("verbose")
+
+		// Load config
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("load config: %w", err)
 		}
-		// TODO: Implement sync logic
-		fmt.Println("Sync not yet implemented")
+
+		// Ensure data directory exists
+		if err := config.EnsureDataDir(cfg); err != nil {
+			return fmt.Errorf("create data dir: %w", err)
+		}
+
+		// Open database
+		database, err := db.Open(cfg.DataDir)
+		if err != nil {
+			return fmt.Errorf("open database: %w", err)
+		}
+		defer database.Close()
+
+		// Create syncer
+		syncer := sync.New(database, cfg.ClaudeHome,
+			sync.WithFullSync(full),
+			sync.WithVerbose(verbose),
+			sync.WithProgressCallback(func(msg string) {
+				fmt.Println(msg)
+			}),
+		)
+
+		// Run sync
+		stats, err := syncer.Run()
+		if err != nil {
+			return fmt.Errorf("sync: %w", err)
+		}
+
+		// Print summary
+		fmt.Println()
+		fmt.Printf("Sync completed in %s\n", stats.Duration.Round(time.Millisecond))
+		fmt.Printf("  Projects:  %d\n", stats.ProjectsFound)
+		fmt.Printf("  Sessions:  %d indexed, %d skipped\n", stats.SessionsIndexed, stats.SessionsSkipped)
+		fmt.Printf("  Turns:     %d\n", stats.TurnsIndexed)
+		fmt.Printf("  Tool uses: %d\n", stats.ToolUsesIndexed)
+
+		if len(stats.Errors) > 0 {
+			fmt.Printf("  Errors:    %d\n", len(stats.Errors))
+			if verbose {
+				for _, e := range stats.Errors {
+					fmt.Printf("    - %v\n", e)
+				}
+			}
+		}
+
+		return nil
 	},
 }
 
@@ -157,6 +207,7 @@ func init() {
 
 	// Sync flags
 	syncCmd.Flags().Bool("full", false, "Force full rescan instead of incremental")
+	syncCmd.Flags().BoolP("verbose", "v", false, "Show verbose output")
 
 	// Search flags
 	searchCmd.Flags().Bool("json", false, "Output results as JSON")
