@@ -13,16 +13,35 @@ Inspired by [msgvault](https://github.com/wesm/msgvault), ccvault provides offli
 
 ## Installation
 
+### Homebrew (macOS/Linux)
+
+```bash
+brew install 2389-research/tap/ccvault
+```
+
+### Using `go install`
+
+Requires Go 1.21 or later:
+
 ```bash
 go install github.com/2389-research/ccvault/cmd/ccvault@latest
 ```
 
-Or build from source:
+Make sure `$GOPATH/bin` (or `$HOME/go/bin`) is in your `PATH`.
+
+### Build from source
 
 ```bash
 git clone https://github.com/2389-research/ccvault.git
 cd ccvault
 go build -o ccvault ./cmd/ccvault
+sudo mv ccvault /usr/local/bin/
+```
+
+### Verify installation
+
+```bash
+ccvault version
 ```
 
 ## Quick Start
