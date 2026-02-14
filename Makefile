@@ -19,7 +19,7 @@ test-short:
 	go test ./... -short
 
 test-coverage:
-	go test ./... -coverprofile=coverage.out
+	go test ./internal/db/... ./pkg/parser/... -coverprofile=coverage.out -covermode=atomic
 
 lint:
 	golangci-lint run
