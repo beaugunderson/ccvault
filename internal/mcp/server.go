@@ -268,8 +268,8 @@ func (s *Server) handleToolsList(req *jsonRPCRequest) {
 			},
 		},
 		{
-			Name:        "get_session",
-			Description: "Retrieve a complete conversation session with all turns, tool usage, and metadata.",
+			Name:        "get_session_summary",
+			Description: "Get a quick overview of a session: metadata, stats, tools used, and first/last messages. Use this first before get_turns.",
 			InputSchema: inputSchema{
 				Type: "object",
 				Properties: map[string]property{
@@ -277,10 +277,46 @@ func (s *Server) handleToolsList(req *jsonRPCRequest) {
 						Type:        "string",
 						Description: "Session UUID",
 					},
-					"format": {
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		{
+			Name:        "get_turns",
+			Description: "Get paginated turns from a session. Use offset to navigate through conversation.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]property{
+					"session_id": {
 						Type:        "string",
-						Description: "Output format",
-						Enum:        []string{"json", "markdown"},
+						Description: "Session UUID",
+					},
+					"offset": {
+						Type:        "number",
+						Description: "Skip first N turns (default: 0)",
+					},
+					"limit": {
+						Type:        "number",
+						Description: "Turns per page (default: 20, max: 50)",
+					},
+					"type": {
+						Type:        "string",
+						Description: "Filter by turn type",
+						Enum:        []string{"user", "assistant", "tool_result"},
+					},
+				},
+				Required: []string{"session_id"},
+			},
+		},
+		{
+			Name:        "get_session",
+			Description: "Get full session in markdown format. WARNING: Large sessions may be truncated. Use get_session_summary + get_turns for big sessions.",
+			InputSchema: inputSchema{
+				Type: "object",
+				Properties: map[string]property{
+					"session_id": {
+						Type:        "string",
+						Description: "Session UUID",
 					},
 				},
 				Required: []string{"session_id"},
@@ -447,6 +483,10 @@ func (s *Server) handleToolsCall(req *jsonRPCRequest) {
 	switch params.Name {
 	case "search_conversations":
 		result, err = s.searchConversations(params.Arguments)
+	case "get_session_summary":
+		result, err = s.getSessionSummary(params.Arguments)
+	case "get_turns":
+		result, err = s.getTurns(params.Arguments)
 	case "get_session":
 		result, err = s.getSession(params.Arguments)
 	case "list_sessions":
@@ -563,15 +603,10 @@ func (s *Server) searchConversations(args map[string]interface{}) (interface{}, 
 	return response, nil
 }
 
-func (s *Server) getSession(args map[string]interface{}) (interface{}, error) {
+func (s *Server) getSessionSummary(args map[string]interface{}) (interface{}, error) {
 	sessionID, _ := args["session_id"].(string)
 	if sessionID == "" {
 		return nil, fmt.Errorf("session_id is required")
-	}
-
-	format, _ := args["format"].(string)
-	if format == "" {
-		format = "json"
 	}
 
 	session, err := s.db.GetSession(sessionID)
@@ -596,23 +631,287 @@ func (s *Server) getSession(args map[string]interface{}) (interface{}, error) {
 		}
 	}
 
-	if format == "markdown" {
-		var buf strings.Builder
-		exporter := export.NewMarkdownExporter()
-		if err := exporter.Export(&buf, session, turns, projectPath); err != nil {
-			return nil, fmt.Errorf("export failed: %w", err)
+	// Count turn types and extract tool usage
+	turnTypeCounts := make(map[string]int)
+	toolCounts := make(map[string]int)
+	var firstUserMsg, lastUserMsg string
+
+	for i, t := range turns {
+		turnTypeCounts[t.Type]++
+
+		// Track tool usage from raw JSON
+		if t.Type == "assistant" && len(t.RawJSON) > 0 {
+			var raw struct {
+				Message struct {
+					Content []struct {
+						Type string `json:"type"`
+						Name string `json:"name,omitempty"`
+					} `json:"content"`
+				} `json:"message"`
+			}
+			if json.Unmarshal(t.RawJSON, &raw) == nil {
+				for _, c := range raw.Message.Content {
+					if c.Type == "tool_use" && c.Name != "" {
+						toolCounts[c.Name]++
+					}
+				}
+			}
 		}
-		return map[string]interface{}{
-			"format":  "markdown",
-			"content": buf.String(),
-		}, nil
+
+		// Capture first and last user messages
+		if t.Type == "user" {
+			content := t.Content
+			if content == "" && len(t.RawJSON) > 0 {
+				// Try to extract from raw JSON
+				var raw struct {
+					Message struct {
+						Content interface{} `json:"content"`
+					} `json:"message"`
+				}
+				if json.Unmarshal(t.RawJSON, &raw) == nil {
+					if str, ok := raw.Message.Content.(string); ok {
+						content = str
+					}
+				}
+			}
+			if content != "" {
+				if firstUserMsg == "" {
+					firstUserMsg = content
+				}
+				lastUserMsg = content
+				// Keep track of index for "last"
+				_ = i
+			}
+		}
+	}
+
+	// Truncate messages
+	if len(firstUserMsg) > 500 {
+		firstUserMsg = firstUserMsg[:500] + "..."
+	}
+	if len(lastUserMsg) > 500 {
+		lastUserMsg = lastUserMsg[:500] + "..."
+	}
+
+	// Build top tools list
+	type toolCount struct {
+		name  string
+		count int
+	}
+	var topTools []toolCount
+	for name, count := range toolCounts {
+		topTools = append(topTools, toolCount{name, count})
+	}
+	// Sort by count desc
+	for i := 0; i < len(topTools); i++ {
+		for j := i + 1; j < len(topTools); j++ {
+			if topTools[j].count > topTools[i].count {
+				topTools[i], topTools[j] = topTools[j], topTools[i]
+			}
+		}
+	}
+	// Take top 10
+	if len(topTools) > 10 {
+		topTools = topTools[:10]
+	}
+	topToolsMap := make([]map[string]interface{}, len(topTools))
+	for i, t := range topTools {
+		topToolsMap[i] = map[string]interface{}{"tool": t.name, "count": t.count}
 	}
 
 	return map[string]interface{}{
-		"session":      session,
-		"project_path": projectPath,
-		"turns":        turns,
-		"turn_count":   len(turns),
+		"session_id":     session.ID,
+		"project_path":   projectPath,
+		"model":          session.Model,
+		"started_at":     session.StartedAt.Format(time.RFC3339),
+		"ended_at":       session.EndedAt.Format(time.RFC3339),
+		"git_branch":     session.GitBranch,
+		"turn_count":     len(turns),
+		"turn_types":     turnTypeCounts,
+		"input_tokens":   session.InputTokens,
+		"output_tokens":  session.OutputTokens,
+		"total_tokens":   session.TotalTokens(),
+		"tools_used":     topToolsMap,
+		"first_user_msg": firstUserMsg,
+		"last_user_msg":  lastUserMsg,
+		"hint":           "Use get_turns to paginate through the conversation",
+	}, nil
+}
+
+func (s *Server) getTurns(args map[string]interface{}) (interface{}, error) {
+	sessionID, _ := args["session_id"].(string)
+	if sessionID == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+
+	limit := 20
+	if l, ok := args["limit"].(float64); ok {
+		limit = int(l)
+		if limit > 50 {
+			limit = 50
+		}
+	}
+
+	offset := 0
+	if o, ok := args["offset"].(float64); ok {
+		offset = int(o)
+	}
+
+	typeFilter, _ := args["type"].(string)
+
+	turns, err := s.db.GetTurns(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get turns: %w", err)
+	}
+
+	// Filter by type if specified
+	if typeFilter != "" {
+		var filtered []models.Turn
+		for _, t := range turns {
+			if t.Type == typeFilter {
+				filtered = append(filtered, t)
+			}
+		}
+		turns = filtered
+	}
+
+	totalCount := len(turns)
+
+	// Apply offset
+	if offset >= len(turns) {
+		turns = nil
+	} else {
+		turns = turns[offset:]
+	}
+
+	// Check for more
+	hasMore := len(turns) > limit
+	if hasMore {
+		turns = turns[:limit]
+	}
+
+	// Transform to compact representation
+	compactTurns := make([]map[string]interface{}, 0, len(turns))
+	for _, t := range turns {
+		content := t.Content
+		// Truncate long content
+		if len(content) > 1000 {
+			content = content[:1000] + "... [truncated, " + fmt.Sprintf("%d", len(t.Content)) + " chars total]"
+		}
+
+		turn := map[string]interface{}{
+			"id":        t.ID,
+			"type":      t.Type,
+			"timestamp": t.Timestamp.Format(time.RFC3339),
+			"content":   content,
+		}
+
+		// Extract tool info for assistant turns
+		if t.Type == "assistant" && len(t.RawJSON) > 0 {
+			var raw struct {
+				Message struct {
+					Content []struct {
+						Type     string `json:"type"`
+						Name     string `json:"name,omitempty"`
+						Thinking string `json:"thinking,omitempty"`
+					} `json:"content"`
+				} `json:"message"`
+			}
+			if json.Unmarshal(t.RawJSON, &raw) == nil {
+				var tools []string
+				hasThinking := false
+				for _, c := range raw.Message.Content {
+					if c.Type == "tool_use" {
+						tools = append(tools, c.Name)
+					}
+					if c.Type == "thinking" {
+						hasThinking = true
+					}
+				}
+				if len(tools) > 0 {
+					turn["tools"] = tools
+				}
+				turn["has_thinking"] = hasThinking
+			}
+		}
+
+		compactTurns = append(compactTurns, turn)
+	}
+
+	response := map[string]interface{}{
+		"session_id":  sessionID,
+		"total_turns": totalCount,
+		"offset":      offset,
+		"limit":       limit,
+		"count":       len(compactTurns),
+		"turns":       compactTurns,
+	}
+
+	if hasMore {
+		response["next_offset"] = offset + limit
+		response["has_more"] = true
+	}
+
+	return response, nil
+}
+
+func (s *Server) getSession(args map[string]interface{}) (interface{}, error) {
+	sessionID, _ := args["session_id"].(string)
+	if sessionID == "" {
+		return nil, fmt.Errorf("session_id is required")
+	}
+
+	session, err := s.db.GetSession(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("database error: %w", err)
+	}
+	if session == nil {
+		return nil, fmt.Errorf("session not found: %s", sessionID)
+	}
+
+	turns, err := s.db.GetTurns(sessionID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get turns: %w", err)
+	}
+
+	// Get project info
+	var projectPath string
+	if session.ProjectID > 0 {
+		project, err := s.db.GetProject(session.ProjectID)
+		if err == nil && project != nil {
+			projectPath = project.Path
+		}
+	}
+
+	// For large sessions, recommend using get_session_summary + get_turns
+	if len(turns) > 100 {
+		return map[string]interface{}{
+			"warning":    "Large session with " + fmt.Sprintf("%d", len(turns)) + " turns. Use get_session_summary and get_turns for better results.",
+			"session_id": sessionID,
+			"turn_count": len(turns),
+			"hint":       "Call get_session_summary first, then use get_turns with offset/limit to paginate",
+		}, nil
+	}
+
+	// Export to markdown for smaller sessions
+	var buf strings.Builder
+	exporter := export.NewMarkdownExporter(
+		export.WithThinking(false), // Skip thinking to reduce size
+	)
+	if err := exporter.Export(&buf, session, turns, projectPath); err != nil {
+		return nil, fmt.Errorf("export failed: %w", err)
+	}
+
+	content := buf.String()
+	// Truncate if still too large
+	if len(content) > 50000 {
+		content = content[:50000] + "\n\n... [truncated - use get_turns for full content]"
+	}
+
+	return map[string]interface{}{
+		"session_id": sessionID,
+		"turn_count": len(turns),
+		"markdown":   content,
 	}, nil
 }
 
